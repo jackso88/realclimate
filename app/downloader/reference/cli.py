@@ -58,9 +58,7 @@ def main() -> int:
         return 1
 
     client = gspread.authorize(credentials)
-    worksheet = client.open_by_key(spreadsheet_id).worksheet(
-        settings.sheet_name
-    )
+    worksheet = client.open_by_key(spreadsheet_id).worksheet(settings.sheet_name)
     data = worksheet.get_all_values()
 
     save_data_to_csv(settings.output_file, data)

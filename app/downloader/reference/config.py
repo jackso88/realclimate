@@ -17,9 +17,7 @@ from dotenv import load_dotenv
 SPREADSHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
 # OAuth2 scopes required to read Google Sheets.
-SCOPES: tuple[str, ...] = (
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
-)
+SCOPES: tuple[str, ...] = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
 
 
 @dataclass(frozen=True)
@@ -109,9 +107,7 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
     """
     if dotenv_path is None:
         # Project root is four levels above this package module.
-        dotenv_path = (
-            Path(__file__).resolve().parent.parent.parent.parent / ".env"
-        )
+        dotenv_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
 
     base_dir = dotenv_path.resolve().parent
     if not dotenv_path.is_file():
@@ -128,9 +124,7 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
     return Settings(
         spreadsheet_url=required("GOOGLE_SHEET_URL"),
         sheet_name=required("GOOGLE_SHEET_NAME"),
-        credentials_file=_resolve_path(
-            required("GOOGLE_CREDENTIALS_FILE"), base_dir
-        ),
+        credentials_file=_resolve_path(required("GOOGLE_CREDENTIALS_FILE"), base_dir),
         token_file=_resolve_path(required("GOOGLE_TOKEN_FILE"), base_dir),
         output_file=_resolve_path(required("GOOGLE_OUTPUT_FILE"), base_dir),
     )

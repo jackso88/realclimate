@@ -13,9 +13,7 @@ from app.downloader.reference.cli import main
 class TestMain:
     """Tests for :func:`main`."""
 
-    def test_success(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_success(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text(
             "\n".join(
@@ -67,9 +65,7 @@ class TestMain:
                 "app.downloader.reference.cli.gspread.authorize",
                 return_value=mock_client,
             ),
-            patch(
-                "app.downloader.reference.cli.save_data_to_csv"
-            ) as save_mock,
+            patch("app.downloader.reference.cli.save_data_to_csv") as save_mock,
         ):
             exit_code = main()
 
@@ -80,9 +76,7 @@ class TestMain:
         args, _ = save_mock.call_args
         assert args[1] == [["col1", "col2"], ["a", "b"]]
 
-    def test_config_error_returns_1(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_config_error_returns_1(self, monkeypatch: pytest.MonkeyPatch) -> None:
         with patch(
             "app.downloader.reference.cli.load_settings",
             side_effect=FileNotFoundError(".env missing"),

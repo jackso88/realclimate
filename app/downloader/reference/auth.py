@@ -49,9 +49,7 @@ def get_credentials(
             authentication cannot be completed.
     """
     if not credentials_file.is_file():
-        raise FileNotFoundError(
-            f"OAuth credentials file not found: {credentials_file}"
-        )
+        raise FileNotFoundError(f"OAuth credentials file not found: {credentials_file}")
 
     credentials: UserCredentials | None = None
 
@@ -68,11 +66,7 @@ def get_credentials(
     if credentials is not None and credentials.valid:
         return credentials
 
-    if (
-        credentials is not None
-        and credentials.expired
-        and credentials.refresh_token
-    ):
+    if credentials is not None and credentials.expired and credentials.refresh_token:
         try:
             credentials.refresh(Request())
         except Exception:

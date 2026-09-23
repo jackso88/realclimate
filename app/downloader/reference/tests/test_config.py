@@ -31,10 +31,7 @@ class TestExtractSpreadsheetId:
         )
 
     def test_url_with_trailing_slash(self) -> None:
-        url = (
-            "https://docs.google.com/spreadsheets/d/"
-            "abc123XYZ_-/edit"
-        )
+        url = "https://docs.google.com/spreadsheets/d/" "abc123XYZ_-/edit"
         assert extract_spreadsheet_id(url) == "abc123XYZ_-"
 
     def test_strips_whitespace(self) -> None:

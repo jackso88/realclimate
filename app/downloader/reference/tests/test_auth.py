@@ -9,7 +9,6 @@ import pytest
 
 from app.downloader.reference.auth import get_credentials
 
-
 SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
 
 
@@ -65,9 +64,7 @@ class TestGetCredentials:
         assert result is mock_creds
         assert token_file.read_text(encoding="utf-8") == '{"token": "new"}'
 
-    def test_starts_flow_when_no_token(
-        self, tmp_path: Path
-    ) -> None:
+    def test_starts_flow_when_no_token(self, tmp_path: Path) -> None:
         creds_file = tmp_path / "client_secrets.json"
         creds_file.write_text("{}", encoding="utf-8")
         token_file = tmp_path / "token.json"
