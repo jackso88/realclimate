@@ -239,12 +239,13 @@ class TestProcessRowsBasics:
 
 
 # --------------------------------------------------------------------------
-# load_source_rows — real xlsx I/O on a tiny generated workbook
+# load_source_rows — real xlsx I/O on a tiny generated workbook, and
+# dispatch to the CSV reader
 # --------------------------------------------------------------------------
 
 
 class TestLoadSourceRows:
-    def test_reads_data_rows_excluding_header(self, tmp_path: Path) -> None:
+    def test_reads_xlsx_data_rows_excluding_header(self, tmp_path: Path) -> None:
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.title = "1. Для заливки"
@@ -269,6 +270,55 @@ class TestLoadSourceRows:
 
         assert len(rows) == 1
         assert rows[0][0] == "NC-1"
+
+    def test_csv_extension_dispatches_to_the_csv_reader(self, tmp_path: Path) -> None:
+        path = tmp_path / "reference_auto.csv"
+        path.write_text(
+            "нс-код,Модель,Наличие,Розница,Дилер,,Серия,Бренд,Тип\n"
+            "NC-1,Model A,5,100,50,,Series,Brand,Type\n",
+            encoding="utf-8",
+        )
+
+        rows = load_source_rows(path)
+
+        assert len(rows) == 1
+        assert rows[0][0] == "NC-1"
+        assert rows[0][1] == "Model A"
+
+    def test_csv_reader_pads_short_rows_and_turns_blanks_into_none(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "reference_auto.csv"
+        # A divider row typically only has the group name in column B.
+        path.write_text(
+            "нс-код,Модель,Наличие,Розница,Дилер,,Серия,Бренд,Тип\n" ",Some Group\n",
+            encoding="utf-8",
+        )
+
+        rows = load_source_rows(path)
+
+        assert len(rows) == 1
+        assert rows[0][0] is None
+        assert rows[0][1] == "Some Group"
+        assert len(rows[0]) >= 9
+
+    def test_csv_reader_matches_process_rows_expectations(self, tmp_path: Path) -> None:
+        # End-to-end: a CSV-sourced row should clean exactly like the
+        # equivalent xlsx row would.
+        path = tmp_path / "reference_auto.csv"
+        path.write_text(
+            "нс-код,Модель,Наличие,Розница,Дилер,,Серия,Бренд,Тип\n"
+            ",СПЛИТ-СИСТЕМЫ Test\n"
+            "NC-1,Model A,5,100,50,,Series,Brand,Кондиционеры Test\n",
+            encoding="utf-8",
+        )
+
+        rows = load_source_rows(path)
+        result = process_rows(rows, {})
+
+        assert len(result.kept) == 1
+        assert result.kept[0].code == "NC-1"
+        assert result.kept[0].retail_price == 100.0
 
 
 # --------------------------------------------------------------------------

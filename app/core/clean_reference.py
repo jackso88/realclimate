@@ -1,10 +1,20 @@
 # -*- coding: utf-8 -*-
-"""Clean the "1. Для заливки" sheet of reference.xlsx and merge the
-result into an existing current.csv export.
+"""Clean the "1. Для заливки" sheet of the reference catalogue and
+merge the result into an existing current.csv export.
+
+The reference catalogue can come from either a ``.xlsx`` workbook
+(read via openpyxl) or a plain ``.csv`` export of just that one sheet
+(e.g. ``reference_auto.csv``, downloaded straight from Google Sheets
+via File -> Download -> Comma-separated values, or an auto-published
+CSV link) — ``load_source_rows`` picks the right reader from the file
+extension. The CSV path exists because Drive API's ``.xlsx`` export
+of the whole workbook has occasionally come back with unresolved
+formulas (missing "Дилер" prices, odd "Наличие" values); exporting
+just the one sheet as CSV avoids that.
 
 Pipeline
 --------
-1.  Read the "1. Для заливки" sheet.
+1.  Read the "1. Для заливки" sheet (xlsx) or its CSV export.
 2.  Track the current section/group name from divider rows (no
     нс-код, text in the "Модель" column position) so every product
     row knows its category — used as current.csv's ``folder``.
@@ -32,6 +42,7 @@ Pipeline
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from typing import Iterable
 
@@ -63,7 +74,7 @@ from app.core.models import DuplicateMap, ExcludedRecord, ProcessResult, Product
 
 BASE_DIR = Path(__file__).resolve().parent
 
-SRC_PATH = Path("../../storage/uploads/reference.xlsx")
+SRC_PATH = Path("../../storage/uploads/reference.csv")
 SHEET_NAME = "1. Для заливки"
 
 CURRENT_CSV_PATH = Path("../../storage/uploads/current.csv")
@@ -243,8 +254,9 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
 # --------------------------------------------------------------------------
 
 
-def load_source_rows(path: Path, sheet_name: str) -> list[tuple]:
-    """Load every data row (i.e. excluding the header) of one sheet.
+def load_source_rows_from_xlsx(path: Path, sheet_name: str) -> list[tuple]:
+    """Load every data row (i.e. excluding the header) of one sheet
+    from a ``.xlsx`` workbook.
 
     Args:
         path: Path to the source ``.xlsx`` workbook.
@@ -260,6 +272,61 @@ def load_source_rows(path: Path, sheet_name: str) -> list[tuple]:
     )
 
 
+def load_source_rows_from_csv(path: Path) -> list[tuple]:
+    """Load every data row (i.e. excluding the header) from a CSV
+    export of the "1. Для заливки" sheet.
+
+    The file is expected to use the sheet's own column order —
+    нс-код, Модель, Наличие, Розница, Дилер, (unused), Серия, Бренд,
+    Тип, … — exactly what you get from Google Sheets' File -> Download
+    -> Comma-separated values (.csv) run on that one sheet, or an
+    auto-published CSV export of it (comma-delimited, UTF-8, quoted
+    fields where needed).
+
+    Args:
+        path: Path to the CSV file.
+
+    Returns:
+        A list of row tuples, in file order. Rows are padded to at
+        least 9 columns and empty cells become ``None``, so the
+        result has the exact same shape ``process_rows`` gets from
+        ``load_source_rows_from_xlsx`` — nothing downstream needs to
+        care which one produced it.
+    """
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        rows = list(csv.reader(handle))
+
+    data_rows = rows[1:]  # drop the header row
+    normalized_rows: list[tuple] = []
+    for row in data_rows:
+        padded = list(row) + [""] * max(0, 9 - len(row))
+        normalized_rows.append(
+            tuple(value if value != "" else None for value in padded)
+        )
+    return normalized_rows
+
+
+def load_source_rows(path: Path, sheet_name: str = SHEET_NAME) -> list[tuple]:
+    """Load every data row of the reference catalogue, from either a
+    ``.xlsx`` workbook or a ``.csv`` export of its "1. Для заливки"
+    sheet.
+
+    Dispatches purely on ``path``'s file extension: ``.csv`` goes to
+    ``load_source_rows_from_csv``, anything else (``.xlsx``, ``.xlsm``,
+    …) goes to ``load_source_rows_from_xlsx``.
+
+    Args:
+        path: Path to the source file.
+        sheet_name: Sheet to read — only used for the ``.xlsx`` path.
+
+    Returns:
+        A list of row tuples, in file order.
+    """
+    if path.suffix.lower() == ".csv":
+        return load_source_rows_from_csv(path)
+    return load_source_rows_from_xlsx(path, sheet_name)
+
+
 def write_excluded_csv(excluded: list[ExcludedRecord], path: Path) -> None:
     """Write the excluded-rows CSV used for manual review.
 
@@ -267,8 +334,6 @@ def write_excluded_csv(excluded: list[ExcludedRecord], path: Path) -> None:
         excluded: Every dropped row, each carrying its reason.
         path: Destination file path.
     """
-    import csv  # local import: this is the only place still writing a "plain" CSV
-
     fieldnames = [
         "нс-код",
         "Модель",
