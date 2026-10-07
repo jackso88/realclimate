@@ -22,7 +22,10 @@ Pipeline
     "Тип" and "Серия" columns.
 4.  Drop rows with an undefined "Тип" (empty cell).
 5.  Drop rows where the retail price OR the dealer price is missing
-    or equal to zero.
+    (unparseable). A retail price of exactly 0 is NOT dropped — it's
+    kept and instead hides the product in current.csv (``hidden = 1``,
+    flipped back to ``0`` the first time the price leaves 0; see
+    ``merge_current.resolve_hidden_flag_change``).
 6.  For нс-коды that repeat, assign a stable, persisted unique code
     (``<code>-D01``, …) via ``duplicate_mapping.py``
     (see ``helpers.assign_duplicate_codes`` for the stability
@@ -400,7 +403,9 @@ def main(
 
     print(f"Source data rows (excluding header): {len(rows)}")
     print(f"Skipped section-divider rows: {result.skipped_divider_rows}")
-    print(f"Excluded (category/undefined type/bad price): {len(result.excluded)}")
+    print(
+        f"Excluded (category/undefined type/duplicate model/missing price): {len(result.excluded)}"
+    )
     print(f"Kept in memory (cleaned catalogue): {len(result.kept)}")
     print(f"Rows assigned a new duplicate suffix this run: {result.renamed_count}")
     print("--- current.csv merge ---")

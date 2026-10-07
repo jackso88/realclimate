@@ -114,7 +114,8 @@ def build_new_row(
                        ``helpers.map_category_to_folder`` back in
                        ``clean_reference.process_rows`` (e.g.
                        "Каталог кондиционеров,Сплит-системы")
-        hidden       = "0"
+        hidden       = "1" if Розница is exactly 0 (hide a brand-new
+                       item that already has no price), else "0"
         amount       = Наличие, parsed to a number (non-numeric
                        statuses such as "наличие уточняйте" become 0
                        — same rule used when refreshing existing rows)
@@ -159,7 +160,7 @@ def build_new_row(
         "article": record.code,
         "code_1c": "",
         "folder": record.folder,
-        "hidden": NEW_ROW_HIDDEN,
+        "hidden": "1" if record.retail_price == 0 else NEW_ROW_HIDDEN,
         "note": "",
         "body": "",
         "amount": str(parse_amount(record.availability)),
@@ -213,11 +214,49 @@ def is_anomalous_price_change(old_price: Optional[float], new_price: float) -> b
     return relative_change > ANOMALOUS_PRICE_CHANGE_THRESHOLD
 
 
+def resolve_hidden_flag_change(
+    old_price: Optional[float], new_price: float
+) -> Optional[str]:
+    """Decide whether a price update should flip the "hidden" flag.
+
+    A price of exactly 0 means "temporarily not for sale" — the row
+    is kept in current.csv (not dropped), but hidden from the
+    storefront. The flag is only ever touched on the specific
+    transitions to/from zero; any other price movement (including a
+    change between two non-zero prices) leaves "hidden" exactly as it
+    was, so a product hidden for some unrelated reason doesn't get
+    silently un-hidden by a routine price refresh.
+
+    Args:
+        old_price: The row's previous price, or ``None`` if it wasn't
+            parseable (treated as "not previously zero").
+        new_price: The new price.
+
+    Returns:
+        ``"1"`` if the new price is 0 (hide it), ``"0"`` if the price
+        is leaving 0 for a non-zero value (un-hide it), or ``None`` if
+        this update shouldn't touch "hidden" at all.
+    """
+    if new_price == 0:
+        return "1"
+    if old_price == 0:
+        return "0"
+    return None
+
+
 def _apply_amount_and_price(
     row: dict[str, str], record: ProductRecord, header_by_short_key: dict[str, str]
-) -> tuple[Optional[tuple[Optional[float], float]], Optional[tuple[float, float]]]:
-    """Overwrite the amount/price cells of an existing row, in place,
-    and report what (if anything) actually changed.
+) -> tuple[
+    Optional[tuple[Optional[float], float]],
+    Optional[tuple[float, float]],
+    Optional[tuple[str, str]],
+]:
+    """Overwrite the amount/price/hidden cells of an existing row, in
+    place, and report what (if anything) actually changed.
+
+    "hidden" is only touched when the price crosses to/from exactly
+    zero — see ``resolve_hidden_flag_change``. Every other field
+    changes unconditionally whenever the new value differs.
 
     Args:
         row: The current.csv row to update, mutated in place.
@@ -226,16 +265,18 @@ def _apply_amount_and_price(
             actual header cells.
 
     Returns:
-        ``(price_change, amount_change)`` — each is ``None`` if that
-        value didn't change, otherwise ``(old, new)``. ``old`` for
-        price may itself be ``None`` if the previous cell wasn't a
-        parseable number.
+        ``(price_change, amount_change, hidden_change)`` — each is
+        ``None`` if that value didn't change, otherwise ``(old,
+        new)``. ``old`` for price may itself be ``None`` if the
+        previous cell wasn't a parseable number.
     """
     amount_header = header_by_short_key.get("amount")
     price_header = header_by_short_key.get("price")
+    hidden_header = header_by_short_key.get("hidden")
 
     price_change: Optional[tuple[Optional[float], float]] = None
     amount_change: Optional[tuple[float, float]] = None
+    hidden_change: Optional[tuple[str, str]] = None
 
     if price_header is not None:
         old_price = parse_price(row.get(price_header))
@@ -244,6 +285,14 @@ def _apply_amount_and_price(
         if old_price != new_price:
             price_change = (old_price, new_price)
 
+        if hidden_header is not None:
+            new_hidden = resolve_hidden_flag_change(old_price, new_price)
+            if new_hidden is not None:
+                old_hidden = row.get(hidden_header, "")
+                if old_hidden != new_hidden:
+                    row[hidden_header] = new_hidden
+                    hidden_change = (old_hidden, new_hidden)
+
     if amount_header is not None:
         old_amount = parse_amount(row.get(amount_header))
         new_amount = parse_amount(record.availability)
@@ -251,7 +300,7 @@ def _apply_amount_and_price(
         if old_amount != new_amount:
             amount_change = (old_amount, new_amount)
 
-    return price_change, amount_change
+    return price_change, amount_change, hidden_change
 
 
 def _build_removal_reasons(
@@ -353,7 +402,9 @@ def merge_records_into_current(
 
     result = MergeResult(header=header)
 
-    def _record_changes(article: str, price_change, amount_change) -> None:
+    def _record_changes(
+        article: str, price_change, amount_change, hidden_change
+    ) -> None:
         if price_change is not None:
             old_price, new_price = price_change
             result.price_changes.append((article, old_price, new_price))
@@ -362,6 +413,9 @@ def merge_records_into_current(
         if amount_change is not None:
             old_amount, new_amount = amount_change
             result.amount_changes.append((article, old_amount, new_amount))
+        if hidden_change is not None:
+            old_hidden, new_hidden = hidden_change
+            result.hidden_changes.append((article, old_hidden, new_hidden))
 
     # --- single pass over every existing row -----------------------
     for row in current_rows:
@@ -370,10 +424,10 @@ def merge_records_into_current(
 
         if record is not None:
             # Case 1: still a valid, kept article -> refresh in place.
-            price_change, amount_change = _apply_amount_and_price(
+            price_change, amount_change, hidden_change = _apply_amount_and_price(
                 row, record, header_by_short_key
             )
-            _record_changes(article, price_change, amount_change)
+            _record_changes(article, price_change, amount_change, hidden_change)
             claimed_codes.add(article)
             result.updated_articles.append(article)
             result.rows.append(row)
@@ -401,12 +455,12 @@ def merge_records_into_current(
             # Case 3: stale artificial duplicate code -> rename.
             new_record = matches[0]
             row[article_header] = new_record.code
-            price_change, amount_change = _apply_amount_and_price(
+            price_change, amount_change, hidden_change = _apply_amount_and_price(
                 row, new_record, header_by_short_key
             )
             # Report changes under the NEW code — that's what this
             # article is called from now on.
-            _record_changes(new_record.code, price_change, amount_change)
+            _record_changes(new_record.code, price_change, amount_change, hidden_change)
             claimed_codes.add(new_record.code)
             result.renamed_articles.append((article, new_record.code))
             result.rows.append(row)
@@ -438,6 +492,11 @@ def format_merge_report(result: MergeResult) -> list[str]:
         - anomalous price change (>50% either way): printed right
           after the corresponding price-change line, so it's seen in
           context: "ВНИМАНИЕ!!!! {Артикул}, аномальное изменение цены!!!"
+        - hidden flag flipped by a price crossing to/from zero:
+          printed right after the corresponding price-change line —
+          "Артикул {артикул}, товар скрыт (цена = 0)" when it's now
+          hidden, "Артикул {артикул}, товар возвращён в продажу (цена
+          больше не равна 0)" when it's un-hidden
         - removed article (its row was dropped by the cleaning
           pipeline this run): "Артикул {article} был исключен по
           причине {причина}"
@@ -449,12 +508,16 @@ def format_merge_report(result: MergeResult) -> list[str]:
 
     Returns:
         Report lines, in a sensible reading order: all price/amount
-        changes (grouped per article, anomaly warning right after its
-        price line), then removals, then the new-articles summary line.
+        changes (grouped per article, anomaly/hidden-flag lines right
+        after its price line), then removals, then the new-articles
+        summary line.
     """
     anomalous = set(result.anomalous_price_articles)
     amount_change_by_article = {
         article: (old, new) for article, old, new in result.amount_changes
+    }
+    hidden_change_by_article = {
+        article: (old, new) for article, old, new in result.hidden_changes
     }
 
     lines: list[str] = []
@@ -467,6 +530,15 @@ def format_merge_report(result: MergeResult) -> list[str]:
         )
         if article in anomalous:
             lines.append(f"\nВНИМАНИЕ!!!! {article}, аномальное изменение цены!!!\n")
+
+        if article in hidden_change_by_article:
+            _, new_hidden = hidden_change_by_article[article]
+            if new_hidden == "1":
+                lines.append(f"Артикул {article}, товар скрыт (цена = 0)")
+            else:
+                lines.append(
+                    f"Артикул {article}, товар возвращён в продажу (цена больше не равна 0)"
+                )
 
         # Keep a price change and its amount change on adjacent lines
         # for the same article, when both happened.
@@ -485,7 +557,7 @@ def format_merge_report(result: MergeResult) -> list[str]:
         )
 
     for article, reason in result.removed_articles:
-        lines.append(f"Артикул {article} был исключен по причине: '{reason}'")
+        lines.append(f"Артикул {article} был исключен по причине {reason}")
 
     if result.added_articles:
         lines.append(

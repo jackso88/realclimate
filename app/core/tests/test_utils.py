@@ -153,8 +153,19 @@ class TestPriceExclusionReason:
     def test_two_valid_prices_are_kept(self) -> None:
         assert price_exclusion_reason(100.0, 50.0) is None
 
-    def test_zero_retail_price_is_excluded(self) -> None:
-        reason = price_exclusion_reason(0.0, 50.0)
+    def test_zero_retail_price_is_not_excluded(self) -> None:
+        # Zero is a legitimate state (handled via the "hidden" flag
+        # downstream), not an exclusion reason.
+        assert price_exclusion_reason(0.0, 50.0) is None
+
+    def test_zero_dealer_price_is_not_excluded(self) -> None:
+        assert price_exclusion_reason(100.0, 0.0) is None
+
+    def test_both_prices_zero_is_not_excluded(self) -> None:
+        assert price_exclusion_reason(0.0, 0.0) is None
+
+    def test_missing_retail_price_is_excluded(self) -> None:
+        reason = price_exclusion_reason(None, 50.0)
         assert reason is not None
         assert "Розница" in reason
 
@@ -163,8 +174,8 @@ class TestPriceExclusionReason:
         assert reason is not None
         assert "Дилер" in reason
 
-    def test_both_prices_bad_are_reported_together(self) -> None:
-        reason = price_exclusion_reason(0.0, None)
+    def test_both_prices_missing_are_reported_together(self) -> None:
+        reason = price_exclusion_reason(None, None)
         assert reason is not None
         assert "Розница" in reason and "Дилер" in reason
 

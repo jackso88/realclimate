@@ -176,7 +176,14 @@ def price_exclusion_reason(
     """Decide whether a row should be dropped because of its price.
 
     A row is excluded if EITHER the retail price or the dealer price
-    is missing (``None``) or equal to zero.
+    is missing — i.e. the cell was empty, ``#N/A``, or otherwise
+    unparseable as a number (``parse_price`` returned ``None``).
+
+    A retail price of exactly ``0`` is deliberately NOT an exclusion
+    reason: it's a legitimate state meaning "temporarily not for
+    sale", handled downstream by hiding the product in current.csv
+    (``hidden = 1``) rather than dropping its row — see
+    ``merge_current.resolve_hidden_flag_change``.
 
     Args:
         retail_price: Parsed retail price ("Розница"), or ``None``.
@@ -187,14 +194,14 @@ def price_exclusion_reason(
         otherwise ``None``.
     """
     bad_fields = []
-    if retail_price is None or retail_price == 0:
+    if retail_price is None:
         bad_fields.append("Розница")
-    if dealer_price is None or dealer_price == 0:
+    if dealer_price is None:
         bad_fields.append("Дилер")
 
     if not bad_fields:
         return None
-    return f"Цена не определена или равна нулю ({', '.join(bad_fields)})"
+    return f"Цена не определена ({', '.join(bad_fields)})"
 
 
 # --------------------------------------------------------------------------
