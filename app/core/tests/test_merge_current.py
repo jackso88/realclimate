@@ -17,6 +17,7 @@ from app.core.merge_current import (
     is_anomalous_price_change,
     load_current_csv,
     merge_records_into_current,
+    resolve_hidden_flag_change,
     write_current_csv,
 )
 from app.core.models import ExcludedRecord, ProductRecord
@@ -68,12 +69,17 @@ def make_record(
 
 
 def make_current_row(
-    article: str, amount: str = "1", price: str = "50.00", **extra: str
+    article: str,
+    amount: str = "1",
+    price: str = "50.00",
+    hidden: str = "0",
+    **extra: str,
 ) -> dict:
     row = {h: "" for h in HEADER}
     row["article : Артикул"] = article
     row["amount : Количество"] = amount
     row["price : Цена"] = price
+    row["hidden : Скрыто"] = hidden
     row["name : Название"] = extra.get("name", f"Untouched name for {article}")
     row["image : Иллюстрация"] = extra.get("image", "https://example.com/old.png")
     return row
@@ -196,6 +202,18 @@ class TestBuildNewRow:
         existing = {"glavnaya-magazina/product/foo-bar"}
         row = build_new_row(record, header_by_key, existing_sef_urls=existing)
         assert row["sef_url : ЧПУ"] == "glavnaya-magazina/product/foo-bar-2"
+
+    def test_zero_price_new_article_is_hidden(self) -> None:
+        record = make_record("NC-1", retail_price=0.0)
+        header_by_key = {h.split(":", 1)[0].strip(): h for h in HEADER}
+        row = build_new_row(record, header_by_key, existing_sef_urls=set())
+        assert row["hidden : Скрыто"] == "1"
+
+    def test_nonzero_price_new_article_is_not_hidden(self) -> None:
+        record = make_record("NC-1", retail_price=42.0)
+        header_by_key = {h.split(":", 1)[0].strip(): h for h in HEADER}
+        row = build_new_row(record, header_by_key, existing_sef_urls=set())
+        assert row["hidden : Скрыто"] == "0"
 
 
 # --------------------------------------------------------------------------
@@ -409,12 +427,36 @@ class TestRemovalOfExcludedArticles:
         )
         lines = format_merge_report(result)
 
-        assert "Артикул NC-1 был исключен по причине: 'Дублирование модели'" in lines
+        assert "Артикул NC-1 был исключен по причине Дублирование модели" in lines
 
 
 # --------------------------------------------------------------------------
 # is_anomalous_price_change
 # --------------------------------------------------------------------------
+
+
+class TestResolveHiddenFlagChange:
+    def test_new_price_zero_hides(self) -> None:
+        assert resolve_hidden_flag_change(100.0, 0.0) == "1"
+
+    def test_old_price_zero_new_price_nonzero_unhides(self) -> None:
+        assert resolve_hidden_flag_change(0.0, 50.0) == "0"
+
+    def test_neither_old_nor_new_is_zero_leaves_untouched(self) -> None:
+        assert resolve_hidden_flag_change(100.0, 150.0) is None
+
+    def test_old_price_unparseable_and_new_price_zero_still_hides(self) -> None:
+        assert resolve_hidden_flag_change(None, 0.0) == "1"
+
+    def test_old_price_unparseable_and_new_price_nonzero_leaves_untouched(self) -> None:
+        # We don't know whether it was hidden for some unrelated
+        # reason, so don't touch it just because the old price was
+        # unreadable.
+        assert resolve_hidden_flag_change(None, 50.0) is None
+
+    def test_zero_to_zero_keeps_hiding(self) -> None:
+        # new_price == 0 branch fires regardless of old_price.
+        assert resolve_hidden_flag_change(0.0, 0.0) == "1"
 
 
 class TestIsAnomalousPriceChange:
@@ -486,6 +528,47 @@ class TestChangeTracking:
         assert result.price_changes == [("НС-9999", 10.0, 15.0)]
         assert result.amount_changes == [("НС-9999", 1.0, 2.0)]
 
+    def test_price_dropping_to_zero_hides_and_is_recorded(self) -> None:
+        current_rows = [make_current_row("NC-1", price="100.00", hidden="0")]
+        record = make_record("NC-1", retail_price=0.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        assert result.hidden_changes == [("NC-1", "0", "1")]
+        assert result.rows[0]["hidden : Скрыто"] == "1"
+
+    def test_price_leaving_zero_unhides_and_is_recorded(self) -> None:
+        current_rows = [make_current_row("NC-1", price="0.00", hidden="1")]
+        record = make_record("NC-1", retail_price=75.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        assert result.hidden_changes == [("NC-1", "1", "0")]
+        assert result.rows[0]["hidden : Скрыто"] == "0"
+
+    def test_price_change_between_nonzero_values_leaves_hidden_untouched(self) -> None:
+        current_rows = [make_current_row("NC-1", price="100.00", hidden="1")]
+        # hidden=1 here for some unrelated manual reason; price just
+        # moves between two non-zero values and must not un-hide it.
+        record = make_record("NC-1", retail_price=120.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        assert result.hidden_changes == []
+        assert result.rows[0]["hidden : Скрыто"] == "1"
+
+    def test_price_already_zero_staying_zero_does_not_re_record(self) -> None:
+        current_rows = [make_current_row("NC-1", price="0.00", hidden="1")]
+        record = make_record("NC-1", retail_price=0.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        # hidden was already "1" -> no actual change to report.
+        assert result.hidden_changes == []
+        assert result.rows[0]["hidden : Скрыто"] == "1"
+
+    def test_zero_price_no_longer_excludes_the_row(self) -> None:
+        # The old behaviour dropped the row entirely; now it must
+        # survive the merge (just hidden).
+        current_rows = [make_current_row("NC-1", price="100.00")]
+        record = make_record("NC-1", retail_price=0.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        assert result.updated_articles == ["NC-1"]
+        assert result.removed_articles == []
+        assert len(result.rows) == 1
+
     def test_brand_new_articles_produce_no_change_entries(self) -> None:
         record = make_record("NC-NEW", model="Fresh")
         result = merge_records_into_current([record], HEADER, [], {})
@@ -530,6 +613,46 @@ class TestFormatMergeReport:
         result = merge_records_into_current(records, HEADER, [], {})
         lines = format_merge_report(result)
         assert "Были добавлены новые артикулы: \nNC-A\nNC-B" in lines
+
+    def test_hidden_message_follows_its_price_line_on_hide(self) -> None:
+        current_rows = [make_current_row("NC-1", price="100.00", hidden="0")]
+        record = make_record("NC-1", retail_price=0.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        lines = format_merge_report(result)
+        price_idx = lines.index("Артикул NC-1, цена изменилась с 100.00 на 0.00")
+        # A drop to 0 is always a >50% move too, so the anomaly
+        # warning is expected right after the price line, and the
+        # hidden message right after that.
+        assert (
+            lines[price_idx + 1]
+            == "\nВНИМАНИЕ!!!! NC-1, аномальное изменение цены!!!\n"
+        )
+        assert lines[price_idx + 2] == "Артикул NC-1, товар скрыт (цена = 0)"
+
+    def test_hidden_message_follows_its_price_line_on_unhide(self) -> None:
+        current_rows = [make_current_row("NC-1", price="0.00", hidden="1")]
+        record = make_record("NC-1", retail_price=75.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        lines = format_merge_report(result)
+        price_idx = lines.index("Артикул NC-1, цена изменилась с 0.00 на 75.00")
+        # A rise from 0 is always a >50% move too (no usable baseline).
+        assert (
+            lines[price_idx + 1]
+            == "\nВНИМАНИЕ!!!! NC-1, аномальное изменение цены!!!\n"
+        )
+        assert (
+            lines[price_idx + 2]
+            == "Артикул NC-1, товар возвращён в продажу (цена больше не равна 0)"
+        )
+
+    def test_no_hidden_message_when_hidden_flag_untouched(self) -> None:
+        current_rows = [make_current_row("NC-1", price="100.00", hidden="0")]
+        record = make_record("NC-1", retail_price=120.0)
+        result = merge_records_into_current([record], HEADER, current_rows, {})
+        lines = format_merge_report(result)
+        assert not any(
+            "скрыт" in line or "возвращён в продажу" in line for line in lines
+        )
 
     def test_no_changes_produces_no_lines(self) -> None:
         current_rows = [make_current_row("NC-1", amount="5", price="100.00")]

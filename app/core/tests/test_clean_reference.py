@@ -237,6 +237,34 @@ class TestProcessRowsBasics:
         codes = sorted(item.code for item in result.kept)
         assert codes == ["NC-1", "NC-1-D01"]
 
+    def test_zero_retail_price_is_kept_not_excluded(self) -> None:
+        # Changed behaviour: a price of exactly 0 used to drop the
+        # row; now it's kept (hidden downstream in current.csv).
+        rows = rows_under(
+            RESOLVABLE_CATEGORY, sheet_row(code="NC-1", model="A", retail=0)
+        )
+        result = process_rows(rows, {})
+        assert len(result.kept) == 1
+        assert result.kept[0].retail_price == 0.0
+        assert result.excluded == []
+
+    def test_zero_dealer_price_is_kept_not_excluded(self) -> None:
+        rows = rows_under(
+            RESOLVABLE_CATEGORY, sheet_row(code="NC-1", model="A", dealer=0)
+        )
+        result = process_rows(rows, {})
+        assert len(result.kept) == 1
+        assert result.excluded == []
+
+    def test_missing_retail_price_is_still_excluded(self) -> None:
+        rows = rows_under(
+            RESOLVABLE_CATEGORY, sheet_row(code="NC-1", model="A", retail="#N/A")
+        )
+        result = process_rows(rows, {})
+        assert result.kept == []
+        assert "Розница" in result.excluded[0].reason
+        assert "Цена не определена" in result.excluded[0].reason
+
 
 # --------------------------------------------------------------------------
 # load_source_rows — real xlsx I/O on a tiny generated workbook, and

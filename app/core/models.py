@@ -153,6 +153,12 @@ class MergeResult:
         anomalous_price_articles: Articles (a subset of
             ``price_changes``) whose price moved by more than 50% in
             either direction — worth a human double-checking.
+        hidden_changes: ``(article, old_hidden, new_hidden)`` for
+            every row whose "hidden" flag was flipped because its
+            price crossed to/from zero (``"1"`` when the new price is
+            0, back to ``"0"`` the first time it leaves 0). Rows
+            whose price change doesn't touch zero in either direction
+            keep whatever "hidden" value they already had.
     """
 
     rows: list[dict[str, str]] = field(default_factory=list)
@@ -167,3 +173,4 @@ class MergeResult:
     )
     amount_changes: list[tuple[str, float, float]] = field(default_factory=list)
     anomalous_price_articles: list[str] = field(default_factory=list)
+    hidden_changes: list[tuple[str, str, str]] = field(default_factory=list)
