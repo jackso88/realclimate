@@ -6,7 +6,6 @@ from zipfile import BadZipFile, ZipFile
 
 from app.downloader.current.exceptions import ExportArchiveError
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_UPLOAD_DIR = PROJECT_ROOT / "storage" / "uploads"
 

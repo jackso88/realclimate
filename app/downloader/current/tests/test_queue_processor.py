@@ -93,8 +93,7 @@ class DownloadLatestExportTests(TestCase):
     def setUp(self):
         self.settings = make_settings()
         self.session = Mock()
-        self.queue_response = Mock(
-            text="""
+        self.queue_response = Mock(text="""
             <div class="cron-list-item">
               <span class="cron-num">#7</span>
               <span class="cron-link"><a href="/f/older.zip">older.zip</a></span>
@@ -103,8 +102,7 @@ class DownloadLatestExportTests(TestCase):
               <span class="cron-num">#42</span>
               <span class="cron-link"><a href="/f/latest.zip">latest.zip</a></span>
             </div>
-            """
-        )
+            """)
         self.queue_response.raise_for_status.return_value = None
         self.archive_response = Mock(
             content=make_zip_bytes({"products.csv": b"sku;name\n1;item\n"})
@@ -115,9 +113,7 @@ class DownloadLatestExportTests(TestCase):
     def test_downloads_highest_cron_archive_and_returns_its_name(self):
         with TemporaryDirectory() as temp_dir:
             upload_dir = Path(temp_dir)
-            downloaded = download_latest_export(
-                self.session, self.settings, upload_dir
-            )
+            downloaded = download_latest_export(self.session, self.settings, upload_dir)
 
             self.assertEqual(downloaded.cron_num, 42)
             self.assertEqual(downloaded.archive_filename, "latest.zip")
@@ -208,8 +204,8 @@ class DeleteArchiveFromAdminTests(TestCase):
         target = '{"file_id":"707","name":"export.zip","filename":"export.zip"}'
         listing = Mock(
             text=(
-                '<input name="file_json" value=\'' + unrelated + '\'>'
-                '<input name="file_json" value=\'' + target + '\'>'
+                '<input name="file_json" value=\'' + unrelated + "'>"
+                '<input name="file_json" value=\'' + target + "'>"
             )
         )
         listing.raise_for_status.return_value = None

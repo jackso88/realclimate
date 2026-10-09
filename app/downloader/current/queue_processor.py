@@ -20,7 +20,6 @@ from app.downloader.current.exceptions import (
 from app.downloader.current.models import DownloadedExport
 from app.downloader.current.utils import DEFAULT_UPLOAD_DIR
 
-
 EXTRA_FIELDS = (
     "vendor",
     "supplier",

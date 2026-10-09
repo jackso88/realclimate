@@ -40,9 +40,7 @@ class MainTests(TestCase):
         settings = Mock()
         load_settings_mock.side_effect = lambda: events.append("settings") or settings
         get_session_mock.side_effect = lambda: events.append("session") or session
-        get_latest_cron_mock.side_effect = (
-            lambda *_: events.append("baseline") or 41
-        )
+        get_latest_cron_mock.side_effect = lambda *_: events.append("baseline") or 41
 
         with TemporaryDirectory() as temp_dir:
             archive_path = Path(temp_dir) / "synthetic-export.zip"
@@ -57,9 +55,7 @@ class MainTests(TestCase):
             download_mock.side_effect = (
                 lambda *_, **__: events.append("download") or downloaded
             )
-            extract_mock.side_effect = (
-                lambda *_: events.append("extract") or csv_path
-            )
+            extract_mock.side_effect = lambda *_: events.append("extract") or csv_path
             delete_local_mock.side_effect = lambda *_: events.append("local-delete")
             delete_admin_mock.side_effect = (
                 lambda *_: events.append("admin-delete") or "file-707"
