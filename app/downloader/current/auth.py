@@ -103,6 +103,20 @@ def authenticate(settings: Settings, timeout: float = 30) -> requests.Session:
 
     response = session.get(redirected_url, timeout=timeout)
     response.raise_for_status()
+
+    mosaic_url = urljoin(settings.cms_url + "/", settings.mosaic_path.lstrip("/") + "/")
+
+    query_params = [
+        ("act", "main"),
+        ("design_id", "32712"),
+        ("access", settings.access),
+        ("ver_id", str(settings.ver_id)),
+    ]
+
+    response = session.get(mosaic_url, params=query_params)
+
+    response.raise_for_status()
+
     return session
 
 

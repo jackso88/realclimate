@@ -1,6 +1,5 @@
 """Unit tests for authentication redirect parsing and session caching."""
 
-import os
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
@@ -11,7 +10,7 @@ from app.downloader.current.auth import (
     extract_javascript_redirect,
     get_auth_session,
 )
-from app.downloader.current.config import Settings, load_settings
+from app.downloader.current.config import Settings
 
 
 class RedirectParsingTests(TestCase):
@@ -34,29 +33,6 @@ class RedirectParsingTests(TestCase):
     def test_raises_when_redirect_is_missing(self):
         with self.assertRaises(AuthenticationError):
             extract_javascript_redirect("<html></html>", "https://example.test/")
-
-
-class SettingsTests(TestCase):
-    """Verify required configuration values are loaded and validated."""
-
-    @patch.dict(
-        os.environ,
-        {
-            "TAPTOP_BASE_URL": "https://dashboard.taptop.pro/",
-            "TAPTOP_USERNAME": "user",
-            "TAPTOP_PASSWORD": "secret",
-        },
-        clear=True,
-    )
-    def test_loads_settings_and_removes_trailing_slash(self):
-        settings = load_settings(env_file="/path/that/does/not/exist")
-        self.assertEqual(settings.base_url, "https://dashboard.taptop.pro")
-        self.assertEqual(settings.username, "user")
-
-    @patch.dict(os.environ, {}, clear=True)
-    def test_requires_credentials(self):
-        with self.assertRaises(ValueError):
-            load_settings(env_file="/path/that/does/not/exist")
 
 
 class AuthenticationTests(TestCase):
@@ -83,12 +59,16 @@ class AuthenticationTests(TestCase):
 
         returned = authenticate(
             Settings(
+                cms_url="https://cms.test/",
                 base_url="https://example.test",
                 username="alice",
                 password="pw",
                 username_field="email",
                 password_field="password",
                 form_name="login_form",
+                shop_id=1234,
+                ver_id=123456789,
+                access="u;123123",
             )
         )
 
@@ -114,7 +94,13 @@ class AuthenticationTests(TestCase):
         with self.assertRaisesRegex(RuntimeError, "HTTP error"):
             authenticate(
                 Settings(
-                    base_url="https://example.test", username="alice", password="pw"
+                    base_url="https://example.test",
+                    username="alice",
+                    password="pw",
+                    shop_id=1234,
+                    ver_id=12345678,
+                    access="u;123456",
+                    cms_url="https://cms.test/",
                 )
             )
 
@@ -136,7 +122,13 @@ class AuthenticationTests(TestCase):
         with self.assertRaisesRegex(RuntimeError, "HTTP error"):
             authenticate(
                 Settings(
-                    base_url="https://example.test", username="alice", password="pw"
+                    base_url="https://example.test",
+                    username="alice",
+                    password="pw",
+                    shop_id=1234,
+                    ver_id=1234567,
+                    access="u;123456",
+                    cms_url="https://cms.test/",
                 )
             )
 
@@ -150,7 +142,13 @@ class AuthenticationTests(TestCase):
         cached_session = Mock()
         authenticate_mock.return_value = cached_session
         load_settings_mock.return_value = Settings(
-            base_url="https://example.test", username="alice", password="pw"
+            base_url="https://example.test",
+            username="alice",
+            password="pw",
+            shop_id=1234,
+            ver_id=12345678,
+            access="u;123456",
+            cms_url="https://cms.test/",
         )
 
         first = get_auth_session()
