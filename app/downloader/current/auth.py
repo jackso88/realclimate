@@ -12,10 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.downloader.current.config import Settings, load_settings
-
-
-class AuthenticationError(RuntimeError):
-    """Raised when the login page or its redirect cannot be processed."""
+from app.downloader.current.exceptions import AuthenticationError
 
 
 def extract_javascript_redirect(html: str, page_url: str) -> str:

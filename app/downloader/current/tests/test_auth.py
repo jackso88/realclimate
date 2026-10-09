@@ -159,7 +159,7 @@ class AuthenticationTests(TestCase):
         redirect_response.raise_for_status.assert_called_once_with()
 
     @patch("app.downloader.current.auth.authenticate")
-    @patch("app.downloader.current.config.load_settings")
+    @patch("app.downloader.current.auth.load_settings")
     def test_cached_session_authenticates_once(
         self, load_settings_mock, authenticate_mock
     ):

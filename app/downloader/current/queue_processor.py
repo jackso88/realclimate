@@ -1,23 +1,25 @@
-"""Submit, download, and unpack product exports from the admin queue."""
+"""Submit exports and manage their files in the admin queue."""
 
-from dataclasses import dataclass
 from io import BytesIO
 import json
 from pathlib import Path
 import secrets
-import shutil
+from time import monotonic, sleep
 from urllib.parse import unquote, urljoin, urlparse
-from zipfile import BadZipFile, ZipFile, is_zipfile
+from zipfile import is_zipfile
 
 import requests
 from bs4 import BeautifulSoup
 
 from app.downloader.current.config import Settings
+from app.downloader.current.exceptions import (
+    AdminFileNotFoundError,
+    ExportArchiveError,
+    ExportNotReadyError,
+)
+from app.downloader.current.models import DownloadedExport
+from app.downloader.current.utils import DEFAULT_UPLOAD_DIR
 
-# SHOP_URL = "https://realclimate.by/-/cms/v1/shop2/"
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_UPLOAD_DIR = PROJECT_ROOT / "storage" / "uploads"
-EXPORT_METADATA_FILENAME = "latest_export.json"
 
 EXTRA_FIELDS = (
     "vendor",
@@ -46,66 +48,50 @@ EXTRA_FIELDS = (
 )
 
 
-class ExportNotReadyError(RuntimeError):
-    """Raised when the admin queue page has no completed ZIP export."""
+def _admin_url(settings: Settings, path: str) -> str:
+    """Build an admin endpoint URL from the configured CMS base URL."""
+    return urljoin(f"{settings.cms_url.rstrip('/')}/", path.lstrip("/"))
 
 
-class ExportArchiveError(RuntimeError):
-    """Raised when the downloaded archive is invalid or has no CSV file."""
-
-
-@dataclass(frozen=True)
-class DownloadedExport:
-    """Metadata about a downloaded export, also persisted beside the archive.
-
-    Attributes:
-        cron_num: Numeric task number shown as ``#123456`` in the admin page.
-        archive_url: URL from which the archive was downloaded.
-        archive_path: Local path where the archive was saved.
-        metadata_path: Local JSON file containing the task and archive details.
-    """
-
-    cron_num: int
-    archive_url: str
-    archive_path: Path
-    metadata_path: Path
+def _access_value(settings: Settings) -> str:
+    """Accept either a raw access value or one copied from an encoded URL."""
+    return unquote(settings.access)
 
 
 def find_latest_export_archive(html: str, settings: Settings) -> tuple[int, str]:
-    """Return the highest-numbered queue task that links to a ZIP file.
+    """Find the highest-numbered queue row with a ZIP link.
 
     Args:
-        html: HTML response from the shop page in the admin panel.
-        settings: Settings with shop, version, and access values.
+        html: HTML returned by the shop page.
+        settings: Settings used to resolve relative archive URLs.
 
     Returns:
-        A pair containing the numeric cron number and absolute ZIP URL.
+        Numeric cron number and absolute archive URL.
 
     Raises:
-        ExportNotReadyError: If no row contains both a numeric cron number and
-            a ZIP download link.
+        ExportNotReadyError: If no row has both a numeric cron number and a
+            ZIP link.
     """
     soup = BeautifulSoup(html, "html.parser")
     candidates: list[tuple[int, str]] = []
+    shop_url = _admin_url(settings, "shop2/")
 
     for row in soup.select(".cron-list-item"):
         cron_element = row.select_one(".cron-num")
-        archive_link = row.select_one('.cron-link a[href$=".zip"]')
+        archive_link = row.select_one(".cron-link a[href]")
         if cron_element is None or archive_link is None:
             continue
 
-        cron_text = cron_element.get_text(strip=True)
-        if cron_text.startswith("#"):
-            cron_text = cron_text[1:]
-
+        cron_text = cron_element.get_text(strip=True).removeprefix("#")
         try:
             cron_num = int(cron_text)
         except ValueError:
             continue
 
-        shop_url = f"{settings.cms_url}/shop2/"
-        archive_url = urljoin(shop_url, archive_link["href"])
-        candidates.append((cron_num, archive_url))
+        href = archive_link.get("href", "")
+        if not urlparse(href).path.lower().endswith(".zip"):
+            continue
+        candidates.append((cron_num, urljoin(shop_url, href)))
 
     if not candidates:
         raise ExportNotReadyError("No completed ZIP export was found in the queue")
@@ -113,134 +99,39 @@ def find_latest_export_archive(html: str, settings: Settings) -> tuple[int, str]
     return max(candidates, key=lambda candidate: candidate[0])
 
 
-def download_latest_export(
+def get_latest_export_cron_num(
     session: requests.Session,
     settings: Settings,
-    upload_dir: str | Path = DEFAULT_UPLOAD_DIR,
     timeout: float = 30,
-) -> DownloadedExport:
-    """Find and download the latest available product export ZIP.
+) -> int:
+    """Read the current highest completed export number before queueing a job.
 
-    The shop page is queried using ``shop_id`` as ``object_id``. The archive
-    and a JSON record of its ``cron_num``, URL, and filename are saved to
-    ``upload_dir``. Files are written via temporary paths and renamed only
-    after a complete response has been received.
-
-    Args:
-        session: Authenticated 'requests' session.
-        settings: Settings with shop, version, and access values.
-        upload_dir: Destination directory; defaults to project storage/uploads.
-        timeout: Timeout in seconds for each HTTP request.
-
-    Returns:
-        A record containing the selected queue number and local archive paths.
-
-    Raises:
-        requests.HTTPError: If the queue page or archive request fails.
-        ExportNotReadyError: If the queue has no completed ZIP export.
-        ExportArchiveError: If the linked response is not a valid ZIP archive.
+    Returns zero when the file list contains no completed ZIP export. The CLI
+    uses this snapshot so it will not accidentally download an older archive
+    while the newly queued export is still running.
     """
-    queue_params = [
+    response = session.get(
+        _admin_url(settings, "shop2/"),
+        params=_shop_view_params(settings),
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    try:
+        cron_num, _ = find_latest_export_archive(response.text, settings)
+    except ExportNotReadyError:
+        return 0
+    return cron_num
+
+
+def _shop_view_params(settings: Settings) -> list[tuple[str, str]]:
+    """Build query parameters for the shop view used by queue lookups."""
+    return [
         ("act", "view"),
         ("object_id", str(settings.shop_id)),
         ("ver_id", str(settings.ver_id)),
-        ("access", unquote(settings.access)),
+        ("access", _access_value(settings)),
         ("rnd", str(secrets.randbelow(9000) + 1000)),
     ]
-
-    shop_url = f"{settings.cms_url}/shop2/"
-    queue_response = session.get(shop_url, params=queue_params, timeout=timeout)
-    queue_response.raise_for_status()
-
-    cron_num, archive_url = find_latest_export_archive(queue_response.text, settings)
-    archive_response = session.get(archive_url, timeout=timeout)
-    archive_response.raise_for_status()
-
-    archive_bytes = archive_response.content
-    if not is_zipfile(BytesIO(archive_bytes)):
-        raise ExportArchiveError("The export link did not return a valid ZIP archive")
-
-    destination = Path(upload_dir)
-    destination.mkdir(parents=True, exist_ok=True)
-    archive_name = Path(urlparse(archive_url).path).name
-    if not archive_name:
-        raise ExportArchiveError("The ZIP download URL has no filename")
-
-    archive_path = destination / archive_name
-    temporary_archive = archive_path.with_name(archive_path.name + ".part")
-    temporary_archive.write_bytes(archive_bytes)
-    temporary_archive.replace(archive_path)
-
-    metadata_path = destination / EXPORT_METADATA_FILENAME
-    metadata = {
-        "cron_num": cron_num,
-        "archive_filename": archive_name,
-        "archive_url": archive_url,
-    }
-    temporary_metadata = metadata_path.with_name(metadata_path.name + ".part")
-    temporary_metadata.write_text(
-        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary_metadata.replace(metadata_path)
-
-    return DownloadedExport(
-        cron_num=cron_num,
-        archive_url=archive_url,
-        archive_path=archive_path,
-        metadata_path=metadata_path,
-    )
-
-
-def extract_export_csv(
-    archive_path: str | Path,
-    upload_dir: str | Path = DEFAULT_UPLOAD_DIR,
-) -> Path:
-    """Extract the CSV member of a ZIP archive as ``current.csv``.
-
-    The member is streamed directly into the destination file rather than
-    extracted by its archive path, preventing ZIP path traversal. Exactly one
-    CSV member is required to avoid silently selecting the wrong export.
-
-    Args:
-        archive_path: Path to a downloaded export ZIP archive.
-        upload_dir: Destination directory; defaults to project storage/uploads.
-
-    Returns:
-        Path to the extracted ``current.csv`` file.
-
-    Raises:
-        ExportArchiveError: If the ZIP is invalid or does not contain exactly
-            one CSV file.
-    """
-    output_dir = Path(upload_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = output_dir / "current.csv"
-    temporary_csv = output_dir / "current.csv.part"
-
-    try:
-        with ZipFile(archive_path) as archive:
-            csv_members = [
-                member
-                for member in archive.infolist()
-                if not member.is_dir() and member.filename.lower().endswith(".csv")
-            ]
-            if len(csv_members) != 1:
-                raise ExportArchiveError(
-                    f"Expected exactly one CSV member in ZIP, found {len(csv_members)}"
-                )
-
-            with archive.open(csv_members[0]) as source, temporary_csv.open(
-                "wb"
-            ) as target:
-                shutil.copyfileobj(source, target)
-    except BadZipFile as error:
-        raise ExportArchiveError(
-            "The downloaded export is not a valid ZIP archive"
-        ) from error
-
-    temporary_csv.replace(csv_path)
-    return csv_path
 
 
 def start_product_export(
@@ -250,37 +141,32 @@ def start_product_export(
 ) -> requests.Response:
     """Submit a product CSV export request to the server-side queue.
 
-    The request mirrors the admin form submission: URL query parameters are
-    passed through ``params`` and the form body through ``data``. A list of
-    key-value pairs preserves repeated ``extra_fields[]`` keys.
-
     Args:
-        session: Authenticated session used for admin requests.
-        settings: Application settings containing the shop, version, and access
-            values required by the export endpoint.
-        timeout: Maximum time in seconds to wait for the HTTP response.
+        session: Authenticated requests session.
+        settings: CMS, shop, version, and access settings.
+        timeout: Maximum time in seconds to wait for the response.
 
     Returns:
-        The HTTP response returned after the export task is submitted.
+        The HTTP response returned after the export request is submitted.
 
     Raises:
         requests.HTTPError: If the endpoint returns an unsuccessful status.
-        requests.RequestException: If the request fails at the transport layer.
+        requests.RequestException: For connection and timeout errors.
     """
+    access = _access_value(settings)
     query_params = [
         ("shop_id", str(settings.shop_id)),
         ("ver_id", str(settings.ver_id)),
-        ("access", settings.access),
+        ("access", access),
         ("popup", "1"),
-        ("rnd", "2153"),
+        ("rnd", str(secrets.randbelow(9000) + 1000)),
         ("xhr", "1"),
         ("mode", "queue"),
     ]
-
     form_data = [
         ("mode", "queue"),
         ("shop_id", str(settings.shop_id)),
-        ("access", settings.access),
+        ("access", access),
         ("ver_id", str(settings.ver_id)),
         ("format", "csv"),
         ("folder_ids", ""),
@@ -293,17 +179,172 @@ def start_product_export(
         ("options[ignore_hidden]", "-1"),
         ("options[fvs_key]", "name"),
         ("xhr", "1"),
-        ("rnd", "1776"),
+        ("rnd", str(secrets.randbelow(9000) + 1000)),
     ]
 
-    export_url = f"{settings.cms_url}/shop2/export/"
-
     response = session.post(
-        export_url,
+        _admin_url(settings, "shop2/export/"),
+        params=query_params,
         data=form_data,
         timeout=timeout,
-        params=query_params,
     )
     response.raise_for_status()
-
     return response
+
+
+def download_latest_export(
+    session: requests.Session,
+    settings: Settings,
+    upload_dir: str | Path = DEFAULT_UPLOAD_DIR,
+    timeout: float = 30,
+    after_cron_num: int | None = None,
+    wait_timeout: float = 300,
+    poll_interval: float = 5,
+) -> DownloadedExport:
+    """Download the ZIP linked from the highest-numbered completed queue task.
+
+    Args:
+        session: Authenticated requests session.
+        settings: Settings with CMS, shop, version, and access values.
+        upload_dir: Local destination; defaults to ``storage/uploads``.
+        timeout: Timeout in seconds for each HTTP request.
+        after_cron_num: If provided, wait for an export with a larger queue
+            number so an older completed file cannot be mistaken for this job.
+        wait_timeout: Maximum seconds to wait for the newer export.
+        poll_interval: Seconds between queue checks while waiting.
+
+    Returns:
+        A ``DownloadedExport`` containing the cron number, archive filename,
+        URL, and local path. No metadata sidecar file is written.
+
+    Raises:
+        requests.HTTPError: If either HTTP request fails.
+        ExportNotReadyError: If no completed ZIP is present in the queue.
+        ExportArchiveError: If the linked response is not a valid ZIP file.
+    """
+    deadline = monotonic() + wait_timeout
+    while True:
+        queue_response = session.get(
+            _admin_url(settings, "shop2/"),
+            params=_shop_view_params(settings),
+            timeout=timeout,
+        )
+        queue_response.raise_for_status()
+
+        try:
+            cron_num, archive_url = find_latest_export_archive(
+                queue_response.text, settings
+            )
+        except ExportNotReadyError:
+            if after_cron_num is None:
+                raise
+            cron_num = 0
+            archive_url = ""
+
+        if after_cron_num is None or cron_num > after_cron_num:
+            break
+        if monotonic() >= deadline:
+            raise ExportNotReadyError(
+                f"No completed export newer than cron #{after_cron_num} "
+                f"appeared within {wait_timeout:g} seconds"
+            )
+        sleep(poll_interval)
+
+    archive_response = session.get(archive_url, timeout=timeout)
+    archive_response.raise_for_status()
+
+    archive_bytes = archive_response.content
+    if not is_zipfile(BytesIO(archive_bytes)):
+        raise ExportArchiveError("The export link did not return a valid ZIP archive")
+
+    archive_filename = Path(urlparse(archive_url).path).name
+    if not archive_filename:
+        raise ExportArchiveError("The ZIP download URL has no filename")
+
+    destination = Path(upload_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    archive_path = destination / archive_filename
+    temporary_archive = archive_path.with_name(archive_path.name + ".part")
+    temporary_archive.write_bytes(archive_bytes)
+    temporary_archive.replace(archive_path)
+
+    return DownloadedExport(
+        cron_num=cron_num,
+        archive_filename=archive_filename,
+        archive_path=archive_path,
+        archive_url=archive_url,
+    )
+
+
+def delete_archive_from_admin(
+    session: requests.Session,
+    settings: Settings,
+    archive_filename: str,
+    timeout: float = 30,
+) -> str:
+    """Delete a named export archive from the admin file manager.
+
+    The file manager returns file records in ``file_json`` hidden inputs. This
+    function matches the requested filename, extracts its ``file_id``, and
+    invokes the corresponding delete endpoint through the configured CMS URL.
+
+    Args:
+        session: Authenticated requests session.
+        settings: CMS version and access settings.
+        archive_filename: Exact archive filename to locate and delete.
+        timeout: Timeout in seconds for each HTTP request.
+
+    Returns:
+        The deleted file's admin ``file_id``.
+
+    Raises:
+        requests.HTTPError: If the file listing or deletion request fails.
+        AdminFileNotFoundError: If no file record matches ``archive_filename``.
+    """
+    access = _access_value(settings)
+    file_url = _admin_url(settings, "file/")
+    listing_params = [
+        ("popup", "1"),
+        ("selector", "1"),
+        ("multiple", "false"),
+        ("ver_id", str(settings.ver_id)),
+        ("access", access),
+        ("type_group_id", "0"),
+        ("rnd", str(secrets.randbelow(9000) + 1000)),
+        ("xhr", "1"),
+    ]
+    listing_response = session.get(file_url, params=listing_params, timeout=timeout)
+    listing_response.raise_for_status()
+
+    soup = BeautifulSoup(listing_response.text, "html.parser")
+    file_id = None
+    for file_json in soup.select('input[name="file_json"][value]'):
+        try:
+            record = json.loads(file_json["value"])
+        except (KeyError, json.JSONDecodeError):
+            continue
+
+        record_names = {record.get("filename"), record.get("name")}
+        if archive_filename in record_names:
+            candidate_id = record.get("file_id")
+            if candidate_id is not None:
+                file_id = str(candidate_id)
+                break
+
+    if file_id is None:
+        raise AdminFileNotFoundError(
+            f"Archive {archive_filename!r} was not found in the admin file manager"
+        )
+
+    delete_params = [
+        ("act", "delete"),
+        ("ver_id", str(settings.ver_id)),
+        ("access", access),
+        ("popup", "1"),
+        ("object_id", file_id),
+        ("rnd", str(secrets.randbelow(9000) + 1000)),
+        ("xhr", "1"),
+    ]
+    delete_response = session.get(file_url, params=delete_params, timeout=timeout)
+    delete_response.raise_for_status()
+    return file_id

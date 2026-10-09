@@ -1,43 +1,10 @@
 """Load application settings from environment variables and an optional .env file."""
 
-from dataclasses import dataclass
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-
-
-@dataclass(frozen=True)
-class Settings:
-    """Configuration required to authenticate with the admin site.
-
-    Attributes:
-        base_url: Root URL of the admin site, without a trailing slash.
-        username: Account name used by the login form.
-        password: Account password used by the login form.
-        login_path: Path that starts the login flow.
-        username_field: HTML form field name for the account email or username.
-        password_field: HTML form field name for the password.
-        form_name: Value sent in the login form's ``_form`` field.
-        shop_id: Required shop ID used by product export.
-        ver_id: Required admin version ID used by product export.
-        access: Required access value used by product export.
-        design_id: Required design ID used to initialize the CMS context.
-    """
-
-    ver_id: int
-    access: str
-    shop_id: int
-    cms_url: str
-    base_url: str
-    username: str
-    password: str
-    design_id: int
-    login_path: str = "/login"
-    mosaic_path: str = "/mosaic"
-    form_name: str = "login_form"
-    username_field: str = "email"
-    password_field: str = "password"
+from app.downloader.current.models import Settings
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:
