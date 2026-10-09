@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from app.downloader.current.exceptions import ConfigurationError
 from app.downloader.current.models import Settings
 
 
@@ -39,7 +41,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
     )
     missing = [name for name in required if not os.getenv(name)]
     if missing:
-        raise ValueError(
+        raise ConfigurationError(
             f"Missing required environment setting(s): {', '.join(missing)}"
         )
 
@@ -47,7 +49,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
     cms_url = os.environ["TAPTOP_CMS_URL"].rstrip("/")
 
     if not base_url.startswith(("https://", "http://")):
-        raise ValueError("TAPTOP_BASE_URL must start with http:// or https://")
+        raise ConfigurationError("TAPTOP_BASE_URL must start with http:// or https://")
 
     shop_id = _required_integer("TAPTOP_SHOP_ID")
     ver_id = _required_integer("TAPTOP_VER_ID")
@@ -76,4 +78,4 @@ def _required_integer(name: str) -> int:
     try:
         return int(value)
     except ValueError as error:
-        raise ValueError(f"{name} must be an integer") from error
+        raise ConfigurationError(f"{name} must be an integer") from error

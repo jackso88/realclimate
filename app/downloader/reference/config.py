@@ -8,37 +8,17 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+from app.downloader.reference.exceptions import ReferenceConfigurationError
+from app.downloader.reference.models import Settings
 
 # Regex that extracts the spreadsheet ID from a full Google Sheets URL.
 SPREADSHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
 # OAuth2 scopes required to read Google Sheets.
 SCOPES: tuple[str, ...] = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
-
-
-@dataclass(frozen=True)
-class Settings:
-    """Immutable application settings loaded from the environment.
-
-    Attributes:
-        spreadsheet_url: Full URL or raw ID of the Google Spreadsheet.
-        sheet_name: Name of the worksheet to download.
-        credentials_file: Path to the OAuth client secrets JSON.
-        token_file: Path where the user token is cached.
-        output_file: Path of the resulting CSV file.
-        chunk_rows: Reserved for future batching; currently unused.
-    """
-
-    spreadsheet_url: str
-    sheet_name: str
-    credentials_file: Path
-    token_file: Path
-    output_file: Path
-    chunk_rows: int = 2000
 
 
 def extract_spreadsheet_id(value: str) -> str:
@@ -118,7 +98,7 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
     def required(name: str) -> str:
         value = os.getenv(name)
         if not value:
-            raise RuntimeError(f"Missing environment variable: {name}")
+            raise ReferenceConfigurationError(f"Missing environment variable: {name}")
         return value
 
     return Settings(

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import csv
+import logging
 from pathlib import Path
 from typing import Sequence
+
+logger = logging.getLogger(__name__)
 
 
 def save_data_to_csv(
@@ -31,3 +34,4 @@ def save_data_to_csv(
     with path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerows(data)
+    logger.info("Saved %d rows to %s", len(data), path)

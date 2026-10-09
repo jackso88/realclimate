@@ -47,9 +47,10 @@ def extract_export_csv(
                     f"Expected exactly one CSV member in ZIP, found {len(csv_members)}"
                 )
 
-            with archive.open(csv_members[0]) as source, temporary_csv.open(
-                "wb"
-            ) as target:
+            with (
+                archive.open(csv_members[0]) as source,
+                temporary_csv.open("wb") as target,
+            ):
                 shutil.copyfileobj(source, target)
     except BadZipFile as error:
         raise ExportArchiveError(

@@ -45,11 +45,10 @@ Pipeline
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 from typing import Iterable
+import logging
 
-import openpyxl
 
 from app.core.utils import (
     assign_duplicate_codes,
@@ -70,20 +69,23 @@ from app.core.merge_current import (
     write_current_csv,
 )
 from app.core.models import DuplicateMap, ExcludedRecord, ProcessResult, ProductRecord
+from app.core.source_io import load_source_rows, write_excluded_csv
 
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
 
+logger = logging.getLogger(__name__)
+
 BASE_DIR = Path(__file__).resolve().parent
 
-SRC_PATH = Path("../../storage/uploads/reference.csv")
+SRC_PATH = Path("../storage/uploads/reference.csv")
 SHEET_NAME = "1. Для заливки"
 
-CURRENT_CSV_PATH = Path("../../storage/uploads/current.csv")
-CURRENT_CSV_OUT_PATH = Path("../../storage/outputs/current.csv")
+CURRENT_CSV_PATH = Path("../storage/uploads/current.csv")
+CURRENT_CSV_OUT_PATH = Path("../storage/outputs/processed.csv")
 
-OUT_DIR = Path("../../storage/outputs")
+OUT_DIR = Path("../storage/outputs")
 EXCLUDED_CSV_PATH = OUT_DIR / "for_zalivka_excluded.csv"
 
 # Module that stores the persistent нс-код duplicate mapping. Lives
@@ -252,116 +254,6 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
     )
 
 
-# --------------------------------------------------------------------------
-# File I/O
-# --------------------------------------------------------------------------
-
-
-def load_source_rows_from_xlsx(path: Path, sheet_name: str) -> list[tuple]:
-    """Load every data row (i.e. excluding the header) of one sheet
-    from a ``.xlsx`` workbook.
-
-    Args:
-        path: Path to the source ``.xlsx`` workbook.
-        sheet_name: Name of the sheet to read.
-
-    Returns:
-        A list of row tuples, in file order.
-    """
-    workbook = openpyxl.load_workbook(path, data_only=True)
-    worksheet = workbook[sheet_name]
-    return list(
-        worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, values_only=True)
-    )
-
-
-def load_source_rows_from_csv(path: Path) -> list[tuple]:
-    """Load every data row (i.e. excluding the header) from a CSV
-    export of the "1. Для заливки" sheet.
-
-    The file is expected to use the sheet's own column order —
-    нс-код, Модель, Наличие, Розница, Дилер, (unused), Серия, Бренд,
-    Тип, … — exactly what you get from Google Sheets' File -> Download
-    -> Comma-separated values (.csv) run on that one sheet, or an
-    auto-published CSV export of it (comma-delimited, UTF-8, quoted
-    fields where needed).
-
-    Args:
-        path: Path to the CSV file.
-
-    Returns:
-        A list of row tuples, in file order. Rows are padded to at
-        least 9 columns and empty cells become ``None``, so the
-        result has the exact same shape ``process_rows`` gets from
-        ``load_source_rows_from_xlsx`` — nothing downstream needs to
-        care which one produced it.
-    """
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        rows = list(csv.reader(handle))
-
-    data_rows = rows[1:]  # drop the header row
-    normalized_rows: list[tuple] = []
-    for row in data_rows:
-        padded = list(row) + [""] * max(0, 9 - len(row))
-        normalized_rows.append(
-            tuple(value if value != "" else None for value in padded)
-        )
-    return normalized_rows
-
-
-def load_source_rows(path: Path, sheet_name: str = SHEET_NAME) -> list[tuple]:
-    """Load every data row of the reference catalogue, from either a
-    ``.xlsx`` workbook or a ``.csv`` export of its "1. Для заливки"
-    sheet.
-
-    Dispatches purely on ``path``'s file extension: ``.csv`` goes to
-    ``load_source_rows_from_csv``, anything else (``.xlsx``, ``.xlsm``,
-    …) goes to ``load_source_rows_from_xlsx``.
-
-    Args:
-        path: Path to the source file.
-        sheet_name: Sheet to read — only used for the ``.xlsx`` path.
-
-    Returns:
-        A list of row tuples, in file order.
-    """
-    if path.suffix.lower() == ".csv":
-        return load_source_rows_from_csv(path)
-    return load_source_rows_from_xlsx(path, sheet_name)
-
-
-def write_excluded_csv(excluded: list[ExcludedRecord], path: Path) -> None:
-    """Write the excluded-rows CSV used for manual review.
-
-    Args:
-        excluded: Every dropped row, each carrying its reason.
-        path: Destination file path.
-    """
-    fieldnames = [
-        "нс-код",
-        "Модель",
-        "Наличие",
-        "Розница, BYN",
-        "Дилер, BYN",
-        "Серия",
-        "Бренд",
-        "Тип",
-        "Категория",
-        "Причина исключения",
-    ]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter=";")
-        writer.writeheader()
-        for record in excluded:
-            writer.writerow(record.as_csv_row())
-
-
-# --------------------------------------------------------------------------
-# Entry point
-# --------------------------------------------------------------------------
-
-
 def main(
     src_path: Path = SRC_PATH,
     sheet_name: str = SHEET_NAME,
@@ -387,6 +279,7 @@ def main(
         in-memory cleaned catalogue, available for any further use
         beyond the current.csv merge.
     """
+    logger.info("Loading source data from %s", src_path)
     rows = load_source_rows(src_path, sheet_name)
     existing_map = load_duplicate_map(mapping_path)
 
@@ -401,41 +294,42 @@ def main(
     write_excluded_csv(result.excluded, excluded_csv_path)
     write_duplicate_map(result.updated_map, mapping_path)
 
-    print(f"Source data rows (excluding header): {len(rows)}")
-    print(f"Skipped section-divider rows: {result.skipped_divider_rows}")
-    print(
-        f"Excluded (category/undefined type/duplicate model/missing price): {len(result.excluded)}"
+    logger.info(
+        "Source rows=%d, skipped dividers=%d, excluded=%d, kept=%d, "
+        "new duplicate suffixes=%d",
+        len(rows),
+        result.skipped_divider_rows,
+        len(result.excluded),
+        len(result.kept),
+        result.renamed_count,
     )
-    print(f"Kept in memory (cleaned catalogue): {len(result.kept)}")
-    print(f"Rows assigned a new duplicate suffix this run: {result.renamed_count}")
-    print("--- current.csv merge ---")
-    print(
-        f"Updated (existing article, amount/price refreshed): {len(merge_result.updated_articles)}"
-    )
-    print(
-        f"Renamed (stale duplicate code -> matched by model): {len(merge_result.renamed_articles)}"
+    logger.info(
+        "Merge updated=%d, renamed=%d, added=%d, removed=%d, untouched=%d",
+        len(merge_result.updated_articles),
+        len(merge_result.renamed_articles),
+        len(merge_result.added_articles),
+        len(merge_result.removed_articles),
+        len(merge_result.untouched_articles),
     )
     for old, new in merge_result.renamed_articles:
-        print(f"    {old} -> {new}")
-    print(f"Added (brand-new article): {len(merge_result.added_articles)}")
-    print(
-        f"Removed (dropped by this run's cleaning): {len(merge_result.removed_articles)}"
-    )
-    print(
-        f"Untouched (present in current.csv, not found in today's data): {len(merge_result.untouched_articles)}"
-    )
-    print(f"Merged current.csv written to: {current_csv_out_path}")
-    print(f"Excluded-rows file written to: {excluded_csv_path}")
-    print(f"Duplicate mapping module written to: {mapping_path}")
+        logger.info("Renamed article %s -> %s", old, new)
+    logger.info("Merged current CSV written to %s", current_csv_out_path)
+    logger.info("Excluded rows written to %s", excluded_csv_path)
+    logger.info("Duplicate mapping written to %s", mapping_path)
 
-    report_lines = format_merge_report(merge_result)
-    if report_lines:
-        print("--- detailed changes ---")
-        for line in report_lines:
-            print(line)
+    for report_line in format_merge_report(merge_result):
+        logger.info("%s", report_line)
 
     return result
 
 
 if __name__ == "__main__":
-    main()
+    from app.core.exceptions import CoreProcessingError
+    from app.logging_config import configure_logging
+
+    configure_logging()
+    try:
+        main()
+    except CoreProcessingError as error:
+        logger.exception("Catalog processing failed: %s", error)
+        raise SystemExit(1) from error

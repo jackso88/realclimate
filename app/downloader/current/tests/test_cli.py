@@ -12,7 +12,7 @@ from app.downloader.current.models import DownloadedExport
 class MainTests(TestCase):
     """Verify CLI orchestration follows the required cleanup order."""
 
-    @patch("app.downloader.current.cli.print")
+    @patch("app.downloader.current.cli.logger.info")
     @patch("app.downloader.current.cli.clear_auth_session_cache")
     @patch("app.downloader.current.cli.delete_archive_from_admin")
     @patch("app.downloader.current.cli.delete_local_archive")
@@ -33,7 +33,7 @@ class MainTests(TestCase):
         delete_local_mock,
         delete_admin_mock,
         clear_cache_mock,
-        print_mock,
+        log_info_mock,
     ):
         events = []
         session = Mock()
@@ -95,7 +95,7 @@ class MainTests(TestCase):
             "synthetic-export.zip",
         )
         clear_cache_mock.assert_called_once_with()
-        print_mock.assert_called_once()
+        self.assertGreater(log_info_mock.call_count, 0)
 
     @patch("app.downloader.current.cli.clear_auth_session_cache")
     @patch("app.downloader.current.cli.start_product_export")

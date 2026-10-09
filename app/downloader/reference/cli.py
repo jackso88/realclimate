@@ -23,6 +23,7 @@ from app.downloader.reference.config import (
     load_settings,
 )
 from app.downloader.reference.utils import save_data_to_csv
+from app.logging_config import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,7 @@ def main() -> int:
     Returns:
         Exit code: ``0`` on success, non-zero on failure.
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s: %(message)s",
-    )
+    configure_logging()
 
     try:
         settings = load_settings()
@@ -53,15 +51,19 @@ def main() -> int:
             settings.token_file,
             SCOPES,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, RuntimeError) as exc:
         logger.error("Credentials error: %s", exc)
         return 1
 
-    client = gspread.authorize(credentials)
-    worksheet = client.open_by_key(spreadsheet_id).worksheet(settings.sheet_name)
-    data = worksheet.get_all_values()
+    try:
+        client = gspread.authorize(credentials)
+        worksheet = client.open_by_key(spreadsheet_id).worksheet(settings.sheet_name)
+        data = worksheet.get_all_values()
+        save_data_to_csv(settings.output_file, data)
+    except Exception:
+        logger.exception("Could not download or save the reference spreadsheet")
+        return 1
 
-    save_data_to_csv(settings.output_file, data)
     logger.info("Downloaded reference CSV written to: %s", settings.output_file)
     return 0
 
