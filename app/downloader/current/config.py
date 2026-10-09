@@ -22,6 +22,7 @@ class Settings:
         shop_id: Required shop ID used by product export.
         ver_id: Required admin version ID used by product export.
         access: Required access value used by product export.
+        design_id: Required design ID used to initialize the CMS context.
     """
 
     ver_id: int
@@ -31,6 +32,7 @@ class Settings:
     base_url: str
     username: str
     password: str
+    design_id: int
     login_path: str = "/login"
     mosaic_path: str = "/mosaic"
     form_name: str = "login_form"
@@ -53,12 +55,13 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
             or an export ID is not an integer.
     """
     if env_file is None:
-        # Project root is four levels above this package module.
-        env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+        # config.py is under app/downloader/current; .env belongs to the repo root.
+        env_file = Path(__file__).resolve().parents[3] / ".env"
 
     load_dotenv(dotenv_path=env_file, override=False)
 
     required = (
+        "TAPTOP_DESIGN_ID",
         "TAPTOP_BASE_URL",
         "TAPTOP_USERNAME",
         "TAPTOP_PASSWORD",
@@ -81,12 +84,14 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
 
     shop_id = _required_integer("TAPTOP_SHOP_ID")
     ver_id = _required_integer("TAPTOP_VER_ID")
+    design_id = _required_integer("TAPTOP_DESIGN_ID")
 
     return Settings(
         ver_id=ver_id,
         shop_id=shop_id,
         cms_url=cms_url,
         base_url=base_url,
+        design_id=design_id,
         access=os.environ["TAPTOP_ACCESS"],
         username=os.environ["TAPTOP_USERNAME"],
         password=os.environ["TAPTOP_PASSWORD"],

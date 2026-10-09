@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -17,6 +18,7 @@ class SettingsTests(TestCase):
             "TAPTOP_SHOP_ID": "1234",
             "TAPTOP_VER_ID": "12345678",
             "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "4321",
             "TAPTOP_CMS_URL": "https://test.pro",
         },
         clear=True,
@@ -40,6 +42,7 @@ class SettingsTests(TestCase):
             "TAPTOP_PASSWORD": "secret",
             "TAPTOP_VER_ID": "12345678",
             "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "4321",
         },
         clear=True,
     )
@@ -56,6 +59,7 @@ class SettingsTests(TestCase):
             "TAPTOP_SHOP_ID": "1234",
             "TAPTOP_VER_ID": "12345678",
             "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "4321",
             "TAPTOP_LOGIN_PATH": "/custom-login",
             "TAPTOP_USERNAME_FIELD": "account_email",
             "TAPTOP_PASSWORD_FIELD": "account_password",
@@ -81,6 +85,7 @@ class SettingsTests(TestCase):
             "TAPTOP_SHOP_ID": "1234",
             "TAPTOP_VER_ID": "12345678",
             "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "4321",
             "TAPTOP_CMS_URL": "https://test.pro",
         },
         clear=True,
@@ -91,6 +96,7 @@ class SettingsTests(TestCase):
         self.assertEqual(settings.shop_id, 1234)
         self.assertEqual(settings.ver_id, 12345678)
         self.assertEqual(settings.access, "u;12345678")
+        self.assertEqual(settings.design_id, 4321)
 
     @patch.dict(
         os.environ,
@@ -101,12 +107,48 @@ class SettingsTests(TestCase):
             "TAPTOP_SHOP_ID": "not-a-number",
             "TAPTOP_VER_ID": "12345678",
             "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "not-a-number",
             "TAPTOP_CMS_URL": "https://test.pro",
         },
         clear=True,
     )
     def test_rejects_non_integer_export_ids(self):
         with self.assertRaisesRegex(ValueError, "TAPTOP_SHOP_ID must be an integer"):
+            load_settings(env_file="/path/that/does/not/exist")
+
+    @patch.dict(
+        os.environ,
+        {
+            "TAPTOP_BASE_URL": "https://dashboard.test.pro",
+            "TAPTOP_USERNAME": "user",
+            "TAPTOP_PASSWORD": "secret",
+            "TAPTOP_SHOP_ID": "1234",
+            "TAPTOP_VER_ID": "12345678",
+            "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_CMS_URL": "https://test.pro",
+        },
+        clear=True,
+    )
+    def test_requires_design_id(self):
+        with self.assertRaisesRegex(ValueError, "TAPTOP_DESIGN_ID"):
+            load_settings(env_file="/path/that/does/not/exist")
+
+    @patch.dict(
+        os.environ,
+        {
+            "TAPTOP_BASE_URL": "https://dashboard.test.pro",
+            "TAPTOP_USERNAME": "user",
+            "TAPTOP_PASSWORD": "secret",
+            "TAPTOP_SHOP_ID": "1234",
+            "TAPTOP_VER_ID": "12345678",
+            "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "not-a-number",
+            "TAPTOP_CMS_URL": "https://test.pro",
+        },
+        clear=True,
+    )
+    def test_rejects_non_integer_design_id(self):
+        with self.assertRaisesRegex(ValueError, "TAPTOP_DESIGN_ID must be an integer"):
             load_settings(env_file="/path/that/does/not/exist")
 
     @patch("app.downloader.current.config.load_dotenv")
@@ -119,6 +161,7 @@ class SettingsTests(TestCase):
             "TAPTOP_SHOP_ID": "1234",
             "TAPTOP_VER_ID": "12345678",
             "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "4321",
             "TAPTOP_CMS_URL": "https://test.pro",
         },
         clear=True,
@@ -137,6 +180,30 @@ class SettingsTests(TestCase):
         self.assertEqual(settings.password, "environment-secret")
         load_dotenv_mock.assert_called_once_with(dotenv_path=".env", override=False)
 
+    @patch("app.downloader.current.config.load_dotenv")
+    @patch.dict(
+        os.environ,
+        {
+            "TAPTOP_SHOP_ID": "1234",
+            "TAPTOP_USERNAME": "user",
+            "TAPTOP_DESIGN_ID": "4321",
+            "TAPTOP_VER_ID": "12345678",
+            "TAPTOP_PASSWORD": "secret",
+            "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_CMS_URL": "https://test.pro",
+            "TAPTOP_BASE_URL": "https://dashboard.test.pro",
+        },
+        clear=True,
+    )
+    def test_default_dotenv_path_is_project_root(self, load_dotenv_mock):
+        load_settings()
+
+        expected_path = Path(__file__).resolve().parents[4] / ".env"
+        load_dotenv_mock.assert_called_once_with(
+            dotenv_path=expected_path,
+            override=False,
+        )
+
     @patch.dict(
         os.environ,
         {
@@ -146,6 +213,7 @@ class SettingsTests(TestCase):
             "TAPTOP_SHOP_ID": "1234",
             "TAPTOP_VER_ID": "12345678",
             "TAPTOP_ACCESS": "u;12345678",
+            "TAPTOP_DESIGN_ID": "4321",
             "TAPTOP_CMS_URL": "https://test.pro",
         },
         clear=True,

@@ -4,8 +4,6 @@ import requests
 
 from app.downloader.current.config import Settings
 
-EXPORT_URL = "https://realclimate.by/-/cms/v1/shop2/export/"
-
 EXTRA_FIELDS = (
     "vendor",
     "supplier",
@@ -86,11 +84,13 @@ def start_product_export(
         ("rnd", "1776"),
     ]
 
+    export_url = f"{settings.cms_url}/shop2/export/"
+
     response = session.post(
-        EXPORT_URL,
-        params=query_params,
+        export_url,
         data=form_data,
         timeout=timeout,
+        params=query_params,
     )
     response.raise_for_status()
 

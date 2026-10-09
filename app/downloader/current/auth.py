@@ -22,7 +22,7 @@ def extract_javascript_redirect(html: str, page_url: str) -> str:
     """Find and resolve the ``window.document.location`` URL in HTML scripts.
 
     Args:
-        html: HTML response body containing a JavaScript redirect assignment.
+        'html': HTML response body containing a JavaScript redirect assignment.
         page_url: URL of the response, used to resolve relative redirect URLs.
 
     Returns:
@@ -108,12 +108,12 @@ def authenticate(settings: Settings, timeout: float = 30) -> requests.Session:
 
     query_params = [
         ("act", "main"),
-        ("design_id", "32712"),
         ("access", settings.access),
         ("ver_id", str(settings.ver_id)),
+        ("design_id", str(settings.design_id)),
     ]
 
-    response = session.get(mosaic_url, params=query_params)
+    response = session.get(mosaic_url, params=query_params, timeout=timeout)
 
     response.raise_for_status()
 

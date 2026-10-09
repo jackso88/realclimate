@@ -54,8 +54,10 @@ class AuthenticationTests(TestCase):
         initial.raise_for_status.return_value = None
         redirected = Mock()
         redirected.raise_for_status.return_value = None
+        mosaic_response = Mock()
+        mosaic_response.raise_for_status.return_value = None
         session.post.return_value = initial
-        session.get.return_value = redirected
+        session.get.side_effect = [redirected, mosaic_response]
 
         returned = authenticate(
             Settings(
@@ -69,6 +71,7 @@ class AuthenticationTests(TestCase):
                 shop_id=1234,
                 ver_id=123456789,
                 access="u;123123",
+                design_id=4321,
             )
         )
 
@@ -78,11 +81,30 @@ class AuthenticationTests(TestCase):
             data={"_form": "login_form", "email": "alice", "password": "pw"},
             timeout=30,
         )
-        session.get.assert_called_once_with(
-            "https://example.test/login?mcc=123", timeout=30
+        self.assertEqual(
+            session.get.call_args_list[0].args,
+            ("https://example.test/login?mcc=123",),
+        )
+        self.assertEqual(session.get.call_args_list[0].kwargs, {"timeout": 30})
+        self.assertEqual(
+            session.get.call_args_list[1].args,
+            ("https://cms.test/mosaic/",),
+        )
+        self.assertEqual(
+            session.get.call_args_list[1].kwargs,
+            {
+                "params": [
+                    ("act", "main"),
+                    ("access", "u;123123"),
+                    ("ver_id", "123456789"),
+                    ("design_id", "4321"),
+                ],
+                "timeout": 30,
+            },
         )
         initial.raise_for_status.assert_called_once_with()
         redirected.raise_for_status.assert_called_once_with()
+        mosaic_response.raise_for_status.assert_called_once_with()
 
     @patch("app.downloader.current.auth.requests.Session")
     def test_http_error_stops_authentication(self, session_factory):
@@ -101,6 +123,7 @@ class AuthenticationTests(TestCase):
                     ver_id=12345678,
                     access="u;123456",
                     cms_url="https://cms.test/",
+                    design_id=4321,
                 )
             )
 
@@ -129,6 +152,7 @@ class AuthenticationTests(TestCase):
                     ver_id=1234567,
                     access="u;123456",
                     cms_url="https://cms.test/",
+                    design_id=4321,
                 )
             )
 
@@ -149,6 +173,7 @@ class AuthenticationTests(TestCase):
             ver_id=12345678,
             access="u;123456",
             cms_url="https://cms.test/",
+            design_id=4321,
         )
 
         first = get_auth_session()
