@@ -1,7 +1,8 @@
 """Reference data downloader from Google Sheets."""
 
 from .auth import get_credentials
-from .config import SCOPES, Settings, extract_spreadsheet_id, load_settings
+from .config import SCOPES, extract_spreadsheet_id, load_settings
+from .models import Settings
 from .utils import save_data_to_csv
 
 __all__ = [

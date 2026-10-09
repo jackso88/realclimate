@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+mapfile -t python_files < <(
+  git diff --cached --name-only --diff-filter=ACMR -- '*.py'
+)
+
+if ((${#python_files[@]})); then
+  for file in "${python_files[@]}"; do
+    python -m black "$file"
+  done
+  git add -- "${python_files[@]}"
+fi
+
+python -m pytest -q

@@ -2,6 +2,7 @@
 
 from io import BytesIO
 import json
+import logging
 from pathlib import Path
 import secrets
 from time import monotonic, sleep
@@ -19,6 +20,8 @@ from app.downloader.current.exceptions import (
 )
 from app.downloader.current.models import DownloadedExport
 from app.downloader.current.utils import DEFAULT_UPLOAD_DIR
+
+logger = logging.getLogger(__name__)
 
 EXTRA_FIELDS = (
     "vendor",
@@ -188,6 +191,7 @@ def start_product_export(
         timeout=timeout,
     )
     response.raise_for_status()
+    logger.info("Export request accepted by the admin queue")
     return response
 
 
@@ -346,4 +350,5 @@ def delete_archive_from_admin(
     ]
     delete_response = session.get(file_url, params=delete_params, timeout=timeout)
     delete_response.raise_for_status()
+    logger.info("Deleted admin archive %s (file_id=%s)", archive_filename, file_id)
     return file_id

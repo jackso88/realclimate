@@ -9,12 +9,16 @@ when possible.
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 from typing import Sequence
 
 from google.auth.credentials import Credentials
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from app.downloader.reference.exceptions import ReferenceAuthenticationError
+
+logger = logging.getLogger(__name__)
 
 
 def get_credentials(
@@ -81,13 +85,19 @@ def get_credentials(
         str(credentials_file),
         scopes,
     )
-    credentials = flow.run_local_server(
-        port=0,
-        open_browser=False,
-        access_type="offline",
-        prompt="consent",
-    )
+    try:
+        credentials = flow.run_local_server(
+            port=0,
+            open_browser=False,
+            access_type="offline",
+            prompt="consent",
+        )
+    except Exception as error:
+        raise ReferenceAuthenticationError(
+            "Google OAuth authorization failed"
+        ) from error
     _persist_token(token_file, credentials)
+    logger.info("Google OAuth token saved to %s", token_file)
     return credentials
 
 

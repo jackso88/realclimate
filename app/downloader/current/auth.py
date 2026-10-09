@@ -6,6 +6,7 @@ redirect in the same session, and retains the resulting cookies.
 """
 
 from functools import lru_cache
+import logging
 from urllib.parse import urljoin
 
 import requests
@@ -13,6 +14,8 @@ from bs4 import BeautifulSoup
 
 from app.downloader.current.config import Settings, load_settings
 from app.downloader.current.exceptions import AuthenticationError
+
+logger = logging.getLogger(__name__)
 
 
 def extract_javascript_redirect(html: str, page_url: str) -> str:
@@ -96,10 +99,12 @@ def authenticate(settings: Settings, timeout: float = 30) -> requests.Session:
         timeout=timeout,
     )
     response.raise_for_status()
+    logger.debug("Submitted login form to %s", login_url)
     redirected_url = extract_javascript_redirect(response.text, response.url)
 
     response = session.get(redirected_url, timeout=timeout)
     response.raise_for_status()
+    logger.debug("Followed login redirect and initialized admin context")
 
     mosaic_url = urljoin(settings.cms_url + "/", settings.mosaic_path.lstrip("/") + "/")
 
