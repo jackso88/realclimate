@@ -10,6 +10,9 @@ mapfile -t python_files < <(
 
 if ((${#python_files[@]})); then
   for file in "${python_files[@]}"; do
+    if [[ "${file##*/}" == "duplicate_mapping.py" ]]; then
+      continue
+    fi
     python -m black "$file"
   done
   git add -- "${python_files[@]}"
