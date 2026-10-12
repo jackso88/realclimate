@@ -78,14 +78,15 @@ from app.core.source_io import load_source_rows, write_excluded_csv
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parents[1]
 
-SRC_PATH = Path("../storage/uploads/reference.csv")
+SRC_PATH = PROJECT_ROOT / "storage" / "uploads" / "reference.csv"
 SHEET_NAME = "1. Для заливки"
 
-CURRENT_CSV_PATH = Path("../storage/uploads/current.csv")
-CURRENT_CSV_OUT_PATH = Path("../storage/outputs/processed.csv")
+CURRENT_CSV_PATH = PROJECT_ROOT / "storage" / "uploads" / "current.csv"
+CURRENT_CSV_OUT_PATH = PROJECT_ROOT / "storage" / "outputs" / "processed.csv"
 
-OUT_DIR = Path("../storage/outputs")
+OUT_DIR = PROJECT_ROOT / "storage" / "outputs"
 EXCLUDED_CSV_PATH = OUT_DIR / "for_zalivka_excluded.csv"
 
 # Module that stores the persistent нс-код duplicate mapping. Lives
@@ -252,6 +253,16 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
         renamed_count=renamed_count,
         skipped_divider_rows=skipped_divider_rows,
     )
+
+
+# --------------------------------------------------------------------------
+# File I/O
+# --------------------------------------------------------------------------
+
+
+# --------------------------------------------------------------------------
+# Entry point
+# --------------------------------------------------------------------------
 
 
 def main(
