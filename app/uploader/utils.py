@@ -81,7 +81,9 @@ def latest_cron_num(html: str) -> int:
 
 def newest_task_after(html: str, baseline_cron_num: int) -> ImportQueueItem | None:
     """Return the newest queue item created after the supplied baseline."""
-    tasks = [task for task in parse_import_queue(html) if task.cron_num > baseline_cron_num]
+    tasks = [
+        task for task in parse_import_queue(html) if task.cron_num > baseline_cron_num
+    ]
     if not tasks:
         return None
     return max(tasks, key=lambda task: task.cron_num)
@@ -90,7 +92,11 @@ def newest_task_after(html: str, baseline_cron_num: int) -> ImportQueueItem | No
 def ensure_import_succeeded(task: ImportQueueItem) -> None:
     """Raise when a queue task reports a terminal failure status."""
     lowered_status = task.status.casefold()
-    if "ошиб" in lowered_status or "error" in lowered_status or "failed" in lowered_status:
+    if (
+        "ошиб" in lowered_status
+        or "error" in lowered_status
+        or "failed" in lowered_status
+    ):
         raise ImportQueueError(
             f"Import task #{task.cron_num} failed with status: {task.status}"
         )

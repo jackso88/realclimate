@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from app.uploader.exceptions import UploaderConfigurationError
 from app.uploader.models import Settings
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROCESSED_FILE = PROJECT_ROOT / "storage" / "outputs" / "processed.csv"
 

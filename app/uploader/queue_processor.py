@@ -18,7 +18,6 @@ from app.uploader.utils import (
     random_query_value,
 )
 
-
 logger = logging.getLogger(__name__)
 MAX_UPLOAD_SIZE = 67_108_864
 
@@ -77,7 +76,9 @@ def upload_processed_file(
                 timeout=timeout,
             )
     except OSError as error:
-        raise UploadFileError(f"Could not read processed CSV {path}: {error}") from error
+        raise UploadFileError(
+            f"Could not read processed CSV {path}: {error}"
+        ) from error
 
     response.raise_for_status()
     file_id = extract_uploaded_file_id(response.text, path.name)

@@ -11,7 +11,6 @@ from app.uploader.config import load_settings
 from app.uploader.exceptions import UploaderAuthenticationError
 from app.uploader.models import Settings
 
-
 logger = logging.getLogger(__name__)
 
 
