@@ -13,7 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 def handle_request(message, bus) -> None:
-    """Authenticate and answer a session creation request."""
+    """Authenticate and publish a session snapshot or request error.
+
+    Args:
+        message: Kafka request envelope, including its reply topic and ID.
+        bus: Shared Kafka bus used to publish the correlated reply.
+    """
     try:
         snapshot = create_session_snapshot(load_settings())
         publish_reply(bus, message, snapshot.to_payload())

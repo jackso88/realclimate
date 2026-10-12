@@ -33,12 +33,25 @@ class SessionSnapshot:
     headers: dict[str, str]
 
     def to_payload(self) -> dict[str, Any]:
-        """Convert the snapshot to a Kafka JSON payload."""
+        """Convert the snapshot into a JSON-serializable Kafka payload.
+
+        Returns:
+            A dictionary containing the cookie records and session headers.
+        """
         return {"cookies": self.cookies, "headers": self.headers}
 
     @classmethod
     def from_session(cls, session: requests.Session) -> "SessionSnapshot":
-        """Capture cookie metadata and headers without pickling a live session."""
+        """Capture serializable cookie metadata and headers from a session.
+
+        Args:
+            session: Authenticated HTTP session whose cookies and headers are
+                to be transferred to another service.
+
+        Returns:
+            A snapshot that can be serialized and later used to restore a
+            process-local :class:`requests.Session`.
+        """
         cookies = []
         for cookie in session.cookies:
             cookies.append(
@@ -56,11 +69,22 @@ class SessionSnapshot:
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "SessionSnapshot":
-        """Build a typed snapshot from a response envelope."""
+        """Build a session snapshot from its serialized Kafka payload.
+
+        Args:
+            payload: Mapping containing the ``cookies`` and ``headers`` keys.
+
+        Returns:
+            A snapshot suitable for reconstructing a requests session.
+        """
         return cls(cookies=payload["cookies"], headers=payload["headers"])
 
     def create_session(self) -> requests.Session:
-        """Restore a process-local requests.Session from cookie data."""
+        """Restore a process-local HTTP session from the saved snapshot.
+
+        Returns:
+            A :class:`requests.Session` with the captured headers and cookies.
+        """
         session = requests.Session()
         session.headers.update(self.headers)
         for data in self.cookies:

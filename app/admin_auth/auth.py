@@ -13,7 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 def extract_javascript_redirect(html: str, page_url: str) -> str:
-    """Extract the quoted JavaScript location used by the CMS login page."""
+    """Extract and resolve the JavaScript redirect from a CMS login page.
+
+    Args:
+        html: HTML response body containing the redirect script.
+        page_url: URL of that response, used to resolve relative targets.
+
+    Returns:
+        The absolute redirect URL.
+
+    Raises:
+        AdminLoginError: If no supported quoted redirect is present.
+    """
     soup = BeautifulSoup(html, "html.parser")
     for script in soup.find_all("script"):
         text = script.string or script.get_text()
@@ -37,7 +48,19 @@ def create_session_snapshot(
     settings: AdminSettings,
     timeout: float = 30,
 ) -> SessionSnapshot:
-    """Authenticate once and return serializable cookies and request headers."""
+    """Authenticate with the CMS and capture the resulting session state.
+
+    Args:
+        settings: Login credentials and CMS endpoint/form configuration.
+        timeout: Maximum number of seconds to wait for each HTTP request.
+
+    Returns:
+        A serializable snapshot containing the session cookies and headers.
+
+    Raises:
+        requests.RequestException: If a login, redirect, or CMS request fails.
+        AdminLoginError: If the login page has no usable redirect URL.
+    """
     session = requests.Session()
     login_url = urljoin(settings.base_url + "/", settings.login_path.lstrip("/"))
     response = session.post(

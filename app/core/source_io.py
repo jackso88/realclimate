@@ -10,7 +10,17 @@ from app.core.exceptions import SourceDataError
 
 
 def parse_source_csv(content: bytes) -> list[tuple]:
-    """Parse supplier CSV bytes into the row shape expected by process_rows."""
+    """Parse supplier CSV bytes into the row shape expected by process_rows.
+
+    Args:
+        content: UTF-8 or UTF-8-BOM CSV bytes with a header row.
+
+    Returns:
+        Data rows as tuples, padded to nine cells; empty cells become ``None``.
+
+    Raises:
+        SourceDataError: If the bytes are not valid UTF-8 or CSV content.
+    """
     try:
         rows = list(csv.reader(io.StringIO(content.decode("utf-8-sig"))))
     except (csv.Error, UnicodeError) as error:
@@ -24,7 +34,15 @@ def parse_source_csv(content: bytes) -> list[tuple]:
 
 
 def serialize_excluded_csv(excluded: list[ExcludedRecord]) -> bytes:
-    """Serialize excluded rows as an Excel-friendly UTF-8 CSV byte string."""
+    """Serialize excluded rows as an Excel-friendly UTF-8 CSV byte string.
+
+    Args:
+        excluded: Records omitted from the processed catalogue, including each
+            record's reason for exclusion.
+
+    Returns:
+        Semicolon-delimited CSV bytes with a UTF-8 BOM and review columns.
+    """
     fieldnames = [
         "нс-код",
         "Модель",

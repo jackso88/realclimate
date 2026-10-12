@@ -21,7 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 def handle_request(message, bus) -> None:
-    """Upload supplied CSV bytes, import them, and remove the admin file."""
+    """Upload CSV content, wait for its import, delete it, and reply.
+
+    Args:
+        message: Kafka request envelope containing the compressed CSV payload,
+            filename, correlation ID, and response topic.
+        bus: Kafka bus used for session requests and the correlated reply.
+    """
     try:
         settings = load_settings()
         content = decode_bytes(message.payload["csv_gzip_base64"])

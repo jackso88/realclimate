@@ -50,12 +50,27 @@ EXTRA_FIELDS = (
 
 
 def _admin_url(settings: Settings, path: str) -> str:
-    """Build an admin endpoint URL from the configured CMS base URL."""
+    """Build an absolute CMS URL for an endpoint path.
+
+    Args:
+        settings: CMS settings containing the base API URL.
+        path: Relative endpoint path, with or without a leading slash.
+
+    Returns:
+        Absolute URL rooted at the configured CMS endpoint.
+    """
     return urljoin(f"{settings.cms_url.rstrip('/')}/", path.lstrip("/"))
 
 
 def _access_value(settings: Settings) -> str:
-    """Accept either a raw access value or one copied from an encoded URL."""
+    """Normalize the access value, decoding URL-escaped input once.
+
+    Args:
+        settings: CMS settings containing the raw or URL-encoded access value.
+
+    Returns:
+        The decoded access value for use as an HTTP parameter.
+    """
     return unquote(settings.access)
 
 
@@ -110,6 +125,17 @@ def get_latest_export_cron_num(
     Returns zero when the file list contains no completed ZIP export. The CLI
     uses this snapshot so it will not accidentally download an older archive
     while the newly queued export is still running.
+
+    Args:
+        session: Authenticated CMS session used to fetch the shop view.
+        settings: CMS URL, shop ID, version ID, and access settings.
+        timeout: Maximum number of seconds to wait for the HTTP request.
+
+    Returns:
+        Highest completed export number, or zero if none is listed.
+
+    Raises:
+        requests.RequestException: If the CMS request fails.
     """
     response = session.get(
         _admin_url(settings, "shop2/"),
@@ -125,7 +151,14 @@ def get_latest_export_cron_num(
 
 
 def _shop_view_params(settings: Settings) -> list[tuple[str, str]]:
-    """Build query parameters for the shop view used by queue lookups."""
+    """Build the query string used to retrieve the CMS shop queue.
+
+    Args:
+        settings: Shop, version, and access values for the CMS request.
+
+    Returns:
+        Ordered query parameter pairs, including a random cache buster.
+    """
     return [
         ("act", "view"),
         ("object_id", str(settings.shop_id)),
@@ -202,7 +235,26 @@ def download_latest_export_content(
     wait_timeout: float = 300,
     poll_interval: float = 5,
 ) -> DownloadedCsv:
-    """Download the new export and return its CSV bytes without local files."""
+    """Wait for a newly queued export, download its ZIP, and extract the CSV.
+
+    Args:
+        session: Authenticated CMS session used for polling and downloading.
+        settings: CMS URL, shop ID, version ID, and access settings.
+        after_cron_num: Queue number observed before the export was submitted;
+            only a newer export is accepted.
+        timeout: Maximum wait for each individual HTTP request, in seconds.
+        wait_timeout: Maximum total time to wait for a new export to finish.
+        poll_interval: Delay between checks of the export queue, in seconds.
+
+    Returns:
+        CSV content and its source archive metadata as a ``DownloadedCsv``.
+
+    Raises:
+        requests.RequestException: If a CMS request fails.
+        ExportNotReadyError: If no newer completed export appears in time.
+        ExportArchiveError: If the ZIP is invalid or does not contain exactly
+            one CSV file.
+    """
     deadline = monotonic() + wait_timeout
     while True:
         response = session.get(

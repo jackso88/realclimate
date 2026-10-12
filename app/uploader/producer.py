@@ -13,7 +13,25 @@ def request_import(
     filename: str = "processed.csv",
     timeout: float = 1200,
 ):
-    """Send CSV bytes to uploader and await its completed import response."""
+    """Send CSV content to the uploader and wait for import completion.
+
+    Args:
+        bus: Kafka bus used to send the import request and receive its reply.
+        response_topic: Topic subscribed to for this request's response.
+        response_group: Consumer group used for the response subscription.
+        csv_content: Processed catalogue in CSV byte form.
+        filename: Filename label presented to the CMS; defaults to
+            ``processed.csv``.
+        timeout: Maximum wait for the uploader response, in seconds.
+
+    Returns:
+        The uploader's response envelope, including its completed queue number.
+
+    Raises:
+        RemoteServiceError: If the uploader reports that upload or import
+            failed.
+        RequestTimeoutError: If the uploader does not reply in time.
+    """
     return bus.request(
         UPLOADER_REQUESTS,
         response_topic,

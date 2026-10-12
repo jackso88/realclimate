@@ -13,7 +13,15 @@ from app.core.source_io import parse_source_csv, serialize_excluded_csv
 
 
 def encode_duplicate_map(duplicate_map: DuplicateMap) -> dict[str, list[list[object]]]:
-    """Convert tuple-keyed duplicate state to a JSON-safe Kafka payload."""
+    """Convert tuple-keyed duplicate state to a JSON-safe Kafka payload.
+
+    Args:
+        duplicate_map: Mapping from ``(original code, model, occurrence)``
+            tuples to assigned article codes.
+
+    Returns:
+        A dictionary whose ``entries`` value contains JSON-compatible lists.
+    """
     return {
         "entries": [
             [code, model, occurrence, assigned]
@@ -23,7 +31,14 @@ def encode_duplicate_map(duplicate_map: DuplicateMap) -> dict[str, list[list[obj
 
 
 def decode_duplicate_map(payload: dict) -> DuplicateMap:
-    """Restore a duplicate map from its JSON-safe Kafka payload."""
+    """Restore a duplicate-code mapping from a Kafka payload.
+
+    Args:
+        payload: Dictionary produced by :func:`encode_duplicate_map`.
+
+    Returns:
+        The mapping keyed by ``(original code, model, occurrence)`` tuples.
+    """
     return {
         (str(code), str(model), int(occurrence)): str(assigned)
         for code, model, occurrence, assigned in payload.get("entries", [])
@@ -35,7 +50,22 @@ def process_catalogue(
     current_csv: bytes,
     duplicate_map: DuplicateMap | None = None,
 ) -> CorePipelineOutput:
-    """Clean, merge, and serialize catalogues entirely in memory."""
+    """Clean supplier rows, merge them into the current CMS export, and serialize.
+
+    Args:
+        reference_csv: Source spreadsheet rows serialized as CSV bytes.
+        current_csv: Current CMS catalogue serialized as CSV bytes.
+        duplicate_map: Previous duplicate-code state; when ``None``, the
+            bundled initial mapping is used.
+
+    Returns:
+        Processed catalogue bytes, excluded-row CSV bytes, change summaries,
+        and updated duplicate-code state.
+
+    Raises:
+        SourceDataError: If the supplier CSV cannot be decoded or parsed.
+        CurrentCatalogError: If the current CMS CSV cannot be parsed.
+    """
     rows = parse_source_csv(reference_csv)
     process_result = process_rows(
         rows,

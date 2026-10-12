@@ -10,7 +10,13 @@ from app.messaging.topics import CURRENT_DOWNLOAD_RESPONSES
 def publish_download(
     bus: KafkaBus, request: Envelope, downloaded: DownloadedCsv
 ) -> None:
-    """Publish the downloaded CSV content without writing it to disk."""
+    """Publish downloaded CSV content and metadata to the request's reply topic.
+
+    Args:
+        bus: Kafka producer used to publish the reply.
+        request: Original request envelope, including its reply topic.
+        downloaded: CSV content and metadata returned by the CMS export.
+    """
     publish_reply(
         bus,
         request,

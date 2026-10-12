@@ -61,7 +61,18 @@ def column_short_key(header_cell: str) -> str:
 
 
 def parse_current_csv(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
-    """Parse existing catalogue CSV bytes without creating a temporary file."""
+    """Parse the current CMS export from its UTF-8 CSV byte representation.
+
+    Args:
+        content: CSV bytes, optionally prefixed by a UTF-8 BOM.
+
+    Returns:
+        A pair containing the original header cells and data rows keyed by
+        those cells.
+
+    Raises:
+        CurrentCatalogError: If decoding or CSV parsing fails.
+    """
     try:
         reader = csv.DictReader(
             io.StringIO(content.decode(CSV_ENCODING), newline=""),
@@ -75,7 +86,15 @@ def parse_current_csv(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
 
 
 def serialize_current_csv(header: list[str], rows: list[dict[str, str]]) -> bytes:
-    """Render merged catalogue rows as Excel-friendly CSV bytes."""
+    """Serialize the merged catalogue using the CMS's CSV format.
+
+    Args:
+        header: Original CMS column labels, in their required order.
+        rows: Updated catalogue rows keyed by those header labels.
+
+    Returns:
+        Semicolon-delimited UTF-8 CSV bytes prefixed with a BOM for Excel.
+    """
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=header, delimiter=CSV_DELIMITER)
     writer.writeheader()
@@ -392,6 +411,17 @@ def merge_records_into_current(
     def _record_changes(
         article: str, price_change, amount_change, hidden_change
     ) -> None:
+        """Add this article's field changes to the merge summary.
+
+        Anomalous price changes are also added to the anomaly list so they
+        can be highlighted in the final change report.
+
+        Args:
+            article: Product article code associated with the changes.
+            price_change: Optional pair of old and new prices.
+            amount_change: Optional pair of old and new stock amounts.
+            hidden_change: Optional pair of old and new hidden flags.
+        """
         if price_change is not None:
             old_price, new_price = price_change
             result.price_changes.append((article, old_price, new_price))

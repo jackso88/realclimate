@@ -40,6 +40,17 @@ duplicate_map_cache: DuplicateMap | None = None
 
 
 def _download(bus: KafkaBus, topic: str, response_topic: str, group: str) -> bytes:
+    """Request a CSV download and decode its binary payload.
+
+    Args:
+        bus: Kafka client used to send the request and receive its reply.
+        topic: Request topic for the downloader service.
+        response_topic: Topic to which the downloader sends its reply.
+        group: Consumer group used while waiting for that reply.
+
+    Returns:
+        The uncompressed CSV contents.
+    """
     response = bus.request(
         topic,
         response_topic,
@@ -52,7 +63,22 @@ def _download(bus: KafkaBus, topic: str, response_topic: str, group: str) -> byt
 
 
 def handle_run(message: Envelope, bus: KafkaBus) -> None:
-    """Download both inputs concurrently, process, import, then notify."""
+    """Run one complete catalogue update requested through Kafka.
+
+    The current catalogue and reference spreadsheet are downloaded concurrently.
+    Their contents are processed in memory, the processed CSV is sent to the
+    uploader, and updated duplicate-map state is persisted to Kafka. Detailed
+    changes are published for notification when the run produces any.
+
+    Args:
+        message: Request envelope whose reply topic and correlation ID identify
+            where the run result must be published.
+        bus: Kafka bus used for downloader requests, state persistence,
+            notifications, uploader requests, and the final reply.
+
+    Returns:
+        ``None``. The result or failure is published to Kafka.
+    """
     global duplicate_map_cache
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:

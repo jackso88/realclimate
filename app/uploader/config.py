@@ -10,7 +10,20 @@ from app.uploader.models import Settings
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:
-    """Load only the shop settings needed by uploader business logic."""
+    """Load and validate CMS settings required by the uploader.
+
+    Args:
+        env_file: Optional environment file. When omitted, the project-root
+            ``.env`` is loaded if present; process environment values take
+            precedence.
+
+    Returns:
+        Immutable CMS settings for upload and product import requests.
+
+    Raises:
+        UploaderConfigurationError: If a required value is missing, the CMS
+            URL is invalid, or an integer setting cannot be parsed.
+    """
     if env_file is None:
         env_file = Path(__file__).resolve().parents[2] / ".env"
     load_dotenv(dotenv_path=env_file, override=False)

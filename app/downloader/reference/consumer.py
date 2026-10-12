@@ -21,7 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 def handle_request(message, bus) -> None:
-    """Read the configured worksheet and reply with CSV bytes."""
+    """Download the configured worksheet and reply with serialized CSV bytes.
+
+    Args:
+        message: Kafka request envelope with correlation and reply metadata.
+        bus: Kafka bus used to publish success or failure responses.
+    """
     try:
         settings = load_settings()
         spreadsheet_id = extract_spreadsheet_id(settings.spreadsheet_url)

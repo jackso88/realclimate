@@ -29,7 +29,18 @@ class Envelope:
         reply_to: str | None = None,
         error: str | None = None,
     ) -> "Envelope":
-        """Create an envelope with fresh ID and UTC timestamp."""
+        """Create an envelope with a fresh ID and UTC creation timestamp.
+
+        Args:
+            command: Operation name carried by the message.
+            payload: JSON-compatible command data; defaults to an empty dict.
+            correlation_id: Optional ID linking this message to a request.
+            reply_to: Optional response topic for request/reply messages.
+            error: Optional error text associated with a failure response.
+
+        Returns:
+            A complete immutable envelope with generated ID and timestamp.
+        """
         return cls(
             message_id=str(uuid4()),
             command=command,
@@ -46,5 +57,17 @@ class Envelope:
 
     @classmethod
     def decode(cls, value: bytes) -> "Envelope":
-        """Deserialize a Kafka message value."""
+        """Deserialize a Kafka message value into an envelope.
+
+        Args:
+            value: UTF-8 JSON bytes from a Kafka record.
+
+        Returns:
+            The reconstructed envelope.
+
+        Raises:
+            UnicodeDecodeError: If the record is not UTF-8 encoded.
+            json.JSONDecodeError: If the record does not contain valid JSON.
+            TypeError: If the JSON object does not match the envelope fields.
+        """
         return cls(**json.loads(value.decode("utf-8")))

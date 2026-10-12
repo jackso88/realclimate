@@ -74,8 +74,8 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
 
     Args:
         dotenv_path: Explicit path to the ``.env`` file. When omitted,
-            the function looks for ``.env`` two levels above the package
-            directory (project root).
+            the function looks for ``.env`` at the project root, four parent
+            directories above this module.
 
     Returns:
         A frozen :class:`Settings` instance.
@@ -97,6 +97,17 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         load_dotenv(dotenv_path, override=False)
 
     def required(name: str) -> str:
+        """Read a non-empty required setting from the process environment.
+
+        Args:
+            name: Environment variable name to read.
+
+        Returns:
+            The configured string value.
+
+        Raises:
+            ReferenceConfigurationError: If the setting is missing or empty.
+        """
         value = os.getenv(name)
         if not value:
             raise ReferenceConfigurationError(f"Missing environment variable: {name}")

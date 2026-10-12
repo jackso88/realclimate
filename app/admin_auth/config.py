@@ -10,7 +10,19 @@ from app.admin_auth.models import AdminSettings
 
 
 def load_settings(env_file: str | Path | None = None) -> AdminSettings:
-    """Load CMS login settings from the project ``.env`` file."""
+    """Load and validate the settings required by admin authentication.
+
+    Args:
+        env_file: Optional path to an environment file. When omitted, the
+            project-root ``.env`` is loaded if present; existing environment
+            variables take precedence.
+
+    Returns:
+        Immutable authentication settings for one worker process.
+
+    Raises:
+        AdminLoginError: If required values are missing or numeric IDs invalid.
+    """
     project_root = Path(__file__).resolve().parents[2]
     load_dotenv(env_file or project_root / ".env", override=False)
     required = (

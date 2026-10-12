@@ -10,7 +10,19 @@ from app.downloader.current.models import Settings
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:
-    """Load the CMS shop settings needed to request and fetch an export."""
+    """Load and validate the CMS settings required by the exporter.
+
+    Args:
+        env_file: Optional environment file to load. If omitted, the project
+            root ``.env`` is loaded when present; existing process variables
+            take precedence.
+
+    Returns:
+        CMS URL, shop ID, version ID, and access value as immutable settings.
+
+    Raises:
+        ConfigurationError: If a required value is missing or invalid.
+    """
     if env_file is None:
         env_file = Path(__file__).resolve().parents[3] / ".env"
     load_dotenv(dotenv_path=env_file, override=False)
@@ -35,7 +47,17 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
 
 
 def _required_integer(name: str) -> int:
-    """Read an integer setting and report invalid values clearly."""
+    """Read a required environment variable as an integer.
+
+    Args:
+        name: Environment variable name to read.
+
+    Returns:
+        The variable's parsed integer value.
+
+    Raises:
+        ConfigurationError: If the value is not a valid integer.
+    """
     try:
         return int(os.environ[name])
     except ValueError as error:

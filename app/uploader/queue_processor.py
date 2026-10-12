@@ -30,7 +30,23 @@ def upload_processed_content(
     filename: str = "processed.csv",
     timeout: float = 60,
 ) -> UploadedFile:
-    """Upload CSV bytes as multipart form data and return the admin file ID."""
+    """Upload CSV bytes as multipart form data to the CMS file manager.
+
+    Args:
+        session: Authenticated CMS session.
+        settings: CMS endpoint, version, access, and shop settings.
+        content: CSV file bytes to upload.
+        filename: Name to assign to the uploaded file.
+        timeout: Maximum number of seconds to wait for the HTTP response.
+
+    Returns:
+        Uploaded-file metadata containing the CMS file ID and filename.
+
+    Raises:
+        UploadFileError: If the content exceeds the CMS's configured size limit.
+        requests.RequestException: If the upload request fails.
+        UploadResponseError: If the response does not identify the new file.
+    """
     if len(content) > MAX_UPLOAD_SIZE:
         raise UploadFileError(
             f"Processed CSV exceeds the CMS upload limit of {MAX_UPLOAD_SIZE} bytes"
@@ -81,7 +97,19 @@ def get_latest_import_cron_num(
     settings: Settings,
     timeout: float = 30,
 ) -> int:
-    """Read the current highest queue number before submitting an import."""
+    """Read the highest import queue number before submitting a new task.
+
+    Args:
+        session: Authenticated CMS session used to fetch the shop view.
+        settings: CMS endpoint, version, access, and shop settings.
+        timeout: Maximum number of seconds to wait for the HTTP request.
+
+    Returns:
+        The largest numeric cron number in the current queue, or zero if empty.
+
+    Raises:
+        requests.RequestException: If the CMS request fails.
+    """
     response = session.get(
         admin_url(settings, "shop2/"),
         params=_shop_view_params(settings),
@@ -92,7 +120,14 @@ def get_latest_import_cron_num(
 
 
 def _shop_view_params(settings: Settings) -> list[tuple[str, str]]:
-    """Build query parameters for the CMS shop queue view."""
+    """Build query parameters for the CMS shop queue view.
+
+    Args:
+        settings: CMS version, access, and shop identifiers.
+
+    Returns:
+        Ordered query parameter pairs with a random cache-busting value.
+    """
     return [
         ("act", "view"),
         ("object_id", str(settings.shop_id)),
@@ -108,7 +143,20 @@ def start_product_import(
     uploaded_file: UploadedFile,
     timeout: float = 30,
 ) -> requests.Response:
-    """Submit an import job for a file already uploaded to the file manager."""
+    """Submit an import job for a file already in the CMS file manager.
+
+    Args:
+        session: Authenticated CMS session.
+        settings: CMS endpoint, version, access, and shop settings.
+        uploaded_file: File metadata returned by ``upload_processed_content``.
+        timeout: Maximum number of seconds to wait for the HTTP response.
+
+    Returns:
+        The CMS response to the import-queue submission.
+
+    Raises:
+        requests.RequestException: If the import request fails.
+    """
     access = access_value(settings)
     file_id = str(uploaded_file.file_id)
     query_params = [
@@ -156,7 +204,25 @@ def wait_for_import_completion(
     wait_timeout: float = 900,
     poll_interval: float = 5,
 ) -> ImportQueueItem:
-    """Wait until the newest task created after the baseline reports ``Готово``."""
+    """Poll the CMS until the new import task reaches its success status.
+
+    Args:
+        session: Authenticated CMS session used to poll the queue.
+        settings: CMS endpoint, version, access, and shop settings.
+        baseline_cron_num: Highest queue number recorded before submission;
+            older tasks are ignored.
+        timeout: Maximum number of seconds to wait for each HTTP request.
+        wait_timeout: Maximum total time to wait for task completion.
+        poll_interval: Delay between queue checks, in seconds.
+
+    Returns:
+        The newly created queue item whose status is ``Готово``.
+
+    Raises:
+        ImportQueueError: If the task fails or does not complete before the
+            total wait timeout.
+        requests.RequestException: If a CMS queue request fails.
+    """
     deadline = monotonic() + wait_timeout
     last_task: ImportQueueItem | None = None
 
@@ -193,7 +259,17 @@ def delete_uploaded_file(
     uploaded_file: UploadedFile,
     timeout: float = 30,
 ) -> None:
-    """Remove the uploaded CSV from the admin file manager by its file ID."""
+    """Remove the uploaded CSV from the CMS file manager by its file ID.
+
+    Args:
+        session: Authenticated CMS session.
+        settings: CMS endpoint, version, and access settings.
+        uploaded_file: Uploaded-file metadata containing the CMS file ID.
+        timeout: Maximum number of seconds to wait for the HTTP request.
+
+    Raises:
+        requests.RequestException: If the delete request fails.
+    """
     response = session.get(
         admin_url(settings, "file/"),
         params=[

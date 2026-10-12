@@ -23,7 +23,15 @@ SENSITIVE_QUERY_VALUE = re.compile(r"(?i)(access|token|password)=([^&\s]+)")
 
 
 def sanitize_error(message: str) -> str:
-    """Redact common credential parameters before logging or notification."""
+    """Redact common credential query parameters from an error string.
+
+    Args:
+        message: Error text that may contain access tokens, passwords, or
+            other sensitive query values.
+
+    Returns:
+        Error text with recognized secret values replaced by ``<redacted>``.
+    """
     return SENSITIVE_QUERY_VALUE.sub(r"\1=<redacted>", message)
 
 
@@ -31,6 +39,12 @@ class KafkaBus:
     """Thin Kafka wrapper shared by producers and request/reply consumers."""
 
     def __init__(self, bootstrap_servers: str):
+        """Create a producer connected to the configured Kafka brokers.
+
+        Args:
+            bootstrap_servers: Comma-separated broker address list accepted
+                by ``confluent-kafka``.
+        """
         from confluent_kafka import Producer
 
         self.bootstrap_servers = bootstrap_servers
@@ -42,7 +56,20 @@ class KafkaBus:
         )
 
     def publish(self, topic: str, message: Envelope, key: str | None = None) -> None:
-        """Publish an envelope and wait for broker acknowledgement."""
+        """Publish an envelope and wait for broker delivery to complete.
+
+        Args:
+            topic: Kafka topic that receives the serialized envelope.
+            message: Envelope to serialize and publish.
+            key: Optional partitioning key; messages with the same key are
+                routed consistently by Kafka.
+
+        Raises:
+            RuntimeError: If the producer cannot finish delivery within the
+                acknowledgement wait period.
+            KafkaException: If the producer rejects the message or encounters
+                a broker error.
+        """
         self.producer.produce(
             topic,
             key=key.encode("utf-8") if key else None,
@@ -54,7 +81,19 @@ class KafkaBus:
             raise RuntimeError(f"Kafka did not acknowledge message for {topic}")
 
     def read_latest(self, topic: str, partition: int = 0) -> Envelope | None:
-        """Read the newest Kafka record in a one-partition compacted state topic."""
+        """Read the newest record from a compacted Kafka state topic.
+
+        Args:
+            topic: Name of the state topic to read.
+            partition: Partition number to inspect; defaults to partition zero.
+
+        Returns:
+            The last envelope in the partition, or ``None`` when it is empty.
+
+        Raises:
+            RuntimeError: If Kafka reports an error while reading the record.
+            KafkaException: If the topic or requested partition is unavailable.
+        """
         from confluent_kafka import Consumer, TopicPartition
 
         consumer = Consumer(
@@ -91,7 +130,24 @@ class KafkaBus:
         timeout: float = 120,
         response_group: str,
     ) -> Envelope:
-        """Send a request and wait for a response with its correlation ID."""
+        """Publish a request and wait for its correlated response.
+
+        Args:
+            request_topic: Topic consumed by the target service.
+            response_topic: Topic on which the response is expected.
+            command: Operation name sent in the request envelope.
+            payload: JSON-serializable request data.
+            timeout: Maximum total wait for a matching response, in seconds.
+            response_group: Consumer group used for the response subscription.
+
+        Returns:
+            The response envelope matching the generated correlation ID.
+
+        Raises:
+            RemoteServiceError: If the target service returns an error.
+            RequestTimeoutError: If a matching response does not arrive in time.
+            RuntimeError: If Kafka reports an error while consuming.
+        """
         from confluent_kafka import Consumer, KafkaError
 
         correlation_id = str(uuid4())
@@ -147,7 +203,23 @@ def run_consumer(
     group_id: str,
     handler: Callable[[Envelope, KafkaBus], None],
 ) -> None:
-    """Consume envelopes forever and commit each handled Kafka record."""
+    """Consume a topic continuously, dispatch records, and commit offsets.
+
+    Args:
+        bootstrap_servers: Comma-separated Kafka broker addresses.
+        topic: Topic to subscribe to.
+        group_id: Consumer group identifier shared by this worker's instances.
+        handler: Callback invoked with each decoded envelope and the producer
+            bus used for replies.
+
+    This function runs until interrupted. Handler exceptions are logged and
+    the corresponding record is still committed, so the worker does not retry
+    that record automatically.
+
+    Raises:
+        RuntimeError: If Kafka returns a non-EOF consumer error.
+        KafkaException: If a consumer cannot be created or subscribed.
+    """
     from confluent_kafka import Consumer, KafkaError
 
     bus = KafkaBus(bootstrap_servers)
@@ -190,7 +262,14 @@ def publish_reply(
     payload: dict | None = None,
     error: str | None = None,
 ) -> None:
-    """Reply to a request when it includes a response topic."""
+    """Publish a correlated response when the request has a reply topic.
+
+    Args:
+        bus: Kafka bus used to publish the reply envelope.
+        request: Original request envelope carrying correlation metadata.
+        payload: Optional success data to put in the response body.
+        error: Optional failure description; sensitive values are redacted.
+    """
     if not request.reply_to:
         return
     reply = Envelope.create(
@@ -207,7 +286,13 @@ def publish_failure(
     service: str,
     error: Exception,
 ) -> None:
-    """Publish a redacted failure notification to the notification service."""
+    """Publish a redacted service failure to the notification topic.
+
+    Args:
+        bus: Kafka bus used to publish the notification.
+        service: Name of the worker that failed.
+        error: Exception whose type and sanitized message will be reported.
+    """
     payload = {
         "service": service,
         "error_type": type(error).__name__,

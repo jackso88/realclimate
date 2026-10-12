@@ -58,25 +58,48 @@ services:
     command:
       - |
         set -e
-        for topic in \
-          core.runs \
-          core.run.responses \
-          core.current.responses \
-          core.reference.responses \
-          downloader.current.requests \
-          downloader.current.responses \
-          downloader.reference.requests \
-          downloader.reference.responses \
-          admin_auth.requests \
-          admin_auth.current.responses \
-          admin_auth.uploader.responses \
-          uploader.requests \
-          core.uploader.responses \
-          notifications; do
-          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-            --create --if-not-exists --topic "$$topic" \
-            --partitions 1 --replication-factor 1
-        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic core.runs \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic core.run.responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic core-current-responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic core-reference-responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic downloader.current.requests \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic downloader.current.responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic downloader.reference.requests \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic downloader.reference.responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic admin_auth.requests \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic admin_auth.current.responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic admin_auth.uploader.responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic uploader.requests \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic core-uploader-responses \
+          --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic notifications \
+          --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --create --if-not-exists --topic core.duplicate-map.state \
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact

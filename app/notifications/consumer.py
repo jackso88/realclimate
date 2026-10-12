@@ -13,7 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 def handle_notification(message: Envelope, _bus) -> None:
-    """Forward actionable events; ignore empty change reports."""
+    """Send failures and non-empty change reports to the admin chat.
+
+    Args:
+        message: Notification envelope containing a failure or change report.
+        _bus: Kafka bus supplied by the consumer callback; unused by this
+            Telegram-only handler.
+    """
     if message.command == "failure":
         payload = message.payload
         text = (

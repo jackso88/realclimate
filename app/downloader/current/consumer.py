@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 def handle_request(message, bus) -> None:
-    """Execute one export task and return the CSV bytes over Kafka."""
+    """Export the latest CSV from the CMS and reply to the Kafka request.
+
+    Args:
+        message: Request envelope containing the correlation and reply data.
+        bus: Kafka bus used for auth requests and the final response.
+    """
     try:
         settings = load_settings()
         session = request_session(

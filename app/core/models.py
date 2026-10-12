@@ -59,7 +59,12 @@ class ProductRecord:
     folder: str = ""
 
     def as_csv_row(self) -> dict[str, Union[str, float]]:
-        """Render this record as a flat dict ready for csv.DictWriter."""
+        """Map the record fields to the source catalogue's CSV columns.
+
+        Returns:
+            A dictionary keyed by the original Russian column headings,
+            ready to pass to :class:`csv.DictWriter`.
+        """
         return {
             "нс-код": self.code,
             "Модель": self.model,
@@ -95,6 +100,11 @@ class ExcludedRecord:
     category: str = ""
 
     def as_csv_row(self) -> dict[str, Union[str, float, None]]:
+        """Map the excluded record and its reason to CSV column names.
+
+        Returns:
+            A dictionary ready to pass to :class:`csv.DictWriter`.
+        """
         return {
             "нс-код": self.code,
             "Модель": self.model,

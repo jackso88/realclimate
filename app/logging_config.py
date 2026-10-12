@@ -4,7 +4,11 @@ import logging
 
 
 def configure_logging(level: int = logging.INFO) -> None:
-    """Configure a concise, consistent log format for CLI applications."""
+    """Configure the root logger with the application's standard log format.
+
+    Args:
+        level: Minimum logging severity to emit; defaults to ``logging.INFO``.
+    """
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
