@@ -1,6 +1,7 @@
 """Upload CSV files and submit or monitor CMS product import tasks."""
 
 import logging
+from io import BytesIO
 from pathlib import Path
 from time import monotonic, sleep, time
 
@@ -22,25 +23,20 @@ logger = logging.getLogger(__name__)
 MAX_UPLOAD_SIZE = 67_108_864
 
 
-def upload_processed_file(
+def upload_processed_content(
     session: requests.Session,
     settings: Settings,
-    file_path: str | Path,
+    content: bytes,
+    filename: str = "processed.csv",
     timeout: float = 60,
 ) -> UploadedFile:
-    """Upload a CSV through the CMS file manager and return its file ID.
-
-    The file is sent as the ``files`` part in a ``multipart/form-data`` body;
-    Requests generates the multipart boundary and content type automatically.
-    """
-    path = Path(file_path)
-    if not path.is_file():
-        raise UploadFileError(f"Processed CSV does not exist: {path}")
-    if path.stat().st_size > MAX_UPLOAD_SIZE:
+    """Upload CSV bytes as multipart form data and return the admin file ID."""
+    if len(content) > MAX_UPLOAD_SIZE:
         raise UploadFileError(
             f"Processed CSV exceeds the CMS upload limit of {MAX_UPLOAD_SIZE} bytes"
         )
 
+    path = Path(filename)
     access = access_value(settings)
     upload_params = [
         ("act", "edit"),
@@ -60,25 +56,19 @@ def upload_processed_file(
         ("names", path.stem),
     ]
 
-    try:
-        with path.open("rb") as file_handle:
-            response = session.post(
-                admin_url(settings, "file/"),
-                params=upload_params,
-                data=form_data,
-                files={
-                    "files": (
-                        path.name,
-                        file_handle,
-                        "text/csv",
-                    )
-                },
-                timeout=timeout,
+    response = session.post(
+        admin_url(settings, "file/"),
+        params=upload_params,
+        data=form_data,
+        files={
+            "files": (
+                path.name,
+                BytesIO(content),
+                "text/csv",
             )
-    except OSError as error:
-        raise UploadFileError(
-            f"Could not read processed CSV {path}: {error}"
-        ) from error
+        },
+        timeout=timeout,
+    )
 
     response.raise_for_status()
     file_id = extract_uploaded_file_id(response.text, path.name)

@@ -8,15 +8,12 @@ Run with::
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app.core.utils import (
     assign_duplicate_codes,
     build_unique_sef_url,
     category_exclusion_reason,
-    load_duplicate_map,
     map_category_to_folder,
     normalize_ws,
     parse_amount,
@@ -24,7 +21,6 @@ from app.core.utils import (
     price_exclusion_reason,
     slugify,
     transliterate_ru,
-    write_duplicate_map,
 )
 from app.core.models import ProductRecord
 
@@ -354,40 +350,6 @@ class TestAssignDuplicateCodes:
         items, _, renamed = assign_duplicate_codes(items, mapping)
         assert items[0].code == "NC-1"
         assert renamed == 0
-
-
-# --------------------------------------------------------------------------
-# duplicate_mapping.py module round-trip
-# --------------------------------------------------------------------------
-
-
-class TestDuplicateMapPersistence:
-    def test_write_then_load_round_trip(self, tmp_path: Path) -> None:
-        mapping = {
-            ("NC-1", "RAS-A", 1): "NC-1",
-            ("NC-1", "RAS-B", 1): "NC-1-D01",
-        }
-        module_path = tmp_path / "duplicate_mapping.py"
-
-        write_duplicate_map(mapping, module_path)
-        loaded = load_duplicate_map(module_path)
-
-        assert loaded == mapping
-
-    def test_missing_file_loads_as_empty_mapping(self, tmp_path: Path) -> None:
-        missing_path = tmp_path / "does_not_exist.py"
-        assert load_duplicate_map(missing_path) == {}
-
-    def test_generated_module_is_sorted_and_editable(self, tmp_path: Path) -> None:
-        mapping = {
-            ("NC-2", "M", 1): "NC-2",
-            ("NC-1", "M", 1): "NC-1",
-        }
-        module_path = tmp_path / "duplicate_mapping.py"
-        write_duplicate_map(mapping, module_path)
-
-        text = module_path.read_text(encoding="utf-8")
-        assert text.index("'NC-1'") < text.index("'NC-2'")
 
 
 # --------------------------------------------------------------------------

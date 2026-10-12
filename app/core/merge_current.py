@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Read current.csv, merge in the cleaned catalogue, write it back out.
+"""Merge the cleaned catalogue into the current CMS export in memory.
 
 Column mapping (see docstrings below for the exact rules):
     - an article already present in current.csv -> only "amount" and
@@ -19,16 +19,13 @@ Column mapping (see docstrings below for the exact rules):
 from __future__ import annotations
 
 import csv
+import io
 from collections import defaultdict
-import logging
-from pathlib import Path
 from typing import Optional
 
 from app.core.exceptions import CurrentCatalogError
 from app.core.utils import build_unique_sef_url, parse_amount, parse_price
 from app.core.models import DuplicateMap, ExcludedRecord, MergeResult, ProductRecord
-
-logger = logging.getLogger(__name__)
 
 CSV_DELIMITER = ";"
 CSV_ENCODING = "utf-8-sig"  # BOM so Excel detects UTF-8/Cyrillic correctly
@@ -63,53 +60,27 @@ def column_short_key(header_cell: str) -> str:
     return header_cell.split(":", 1)[0].strip()
 
 
-def load_current_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-    """Read current.csv.
-
-    Args:
-        path: Path to the existing current.csv export.
-
-    Returns:
-        A tuple of ``(header, rows)`` — the header as it appears in
-        the file (used verbatim when writing back out) and every data
-        row as a dict keyed by that same header.
-    """
+def parse_current_csv(content: bytes) -> tuple[list[str], list[dict[str, str]]]:
+    """Parse existing catalogue CSV bytes without creating a temporary file."""
     try:
-        with path.open(newline="", encoding=CSV_ENCODING) as handle:
-            reader = csv.DictReader(handle, delimiter=CSV_DELIMITER)
-            header = list(reader.fieldnames or [])
-            rows = [dict(row) for row in reader]
-    except (OSError, csv.Error, UnicodeError) as error:
+        reader = csv.DictReader(
+            io.StringIO(content.decode(CSV_ENCODING), newline=""),
+            delimiter=CSV_DELIMITER,
+        )
+        return list(reader.fieldnames or []), [dict(row) for row in reader]
+    except (csv.Error, UnicodeError) as error:
         raise CurrentCatalogError(
-            f"Could not read current catalog {path}: {error}"
+            f"Could not parse current catalog: {error}"
         ) from error
-    logger.info("Loaded %d current catalog rows from %s", len(rows), path)
-    return header, rows
 
 
-def write_current_csv(
-    header: list[str], rows: list[dict[str, str]], path: Path
-) -> None:
-    """Write current.csv back out, preserving the original header.
-
-    Args:
-        header: Column header, exactly as read from the source file.
-        rows: Every row to write (existing rows, in their original
-            order, followed by newly added ones).
-        path: Destination path.
-    """
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", newline="", encoding=CSV_ENCODING) as handle:
-            writer = csv.DictWriter(handle, fieldnames=header, delimiter=CSV_DELIMITER)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(row)
-    except (OSError, csv.Error) as error:
-        raise CurrentCatalogError(
-            f"Could not write current catalog {path}: {error}"
-        ) from error
-    logger.info("Wrote %d current catalog rows to %s", len(rows), path)
+def serialize_current_csv(header: list[str], rows: list[dict[str, str]]) -> bytes:
+    """Render merged catalogue rows as Excel-friendly CSV bytes."""
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=header, delimiter=CSV_DELIMITER)
+    writer.writeheader()
+    writer.writerows(rows)
+    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 
 
 def build_new_row(

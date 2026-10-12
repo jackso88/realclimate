@@ -62,7 +62,6 @@ class TestLoadSettings:
                     "GOOGLE_SHEET_NAME=Sheet1",
                     "GOOGLE_CREDENTIALS_FILE=creds.json",
                     "GOOGLE_TOKEN_FILE=token.json",
-                    "GOOGLE_OUTPUT_FILE=out/reference.csv",
                 ]
             ),
             encoding="utf-8",
@@ -74,7 +73,6 @@ class TestLoadSettings:
             "GOOGLE_SHEET_NAME",
             "GOOGLE_CREDENTIALS_FILE",
             "GOOGLE_TOKEN_FILE",
-            "GOOGLE_OUTPUT_FILE",
         ):
             monkeypatch.delenv(key, raising=False)
 
@@ -85,8 +83,21 @@ class TestLoadSettings:
         assert settings.sheet_name == "Sheet1"
         assert settings.credentials_file == tmp_path / "creds.json"
         assert settings.token_file == tmp_path / "token.json"
-        assert settings.output_file == tmp_path / "out" / "reference.csv"
-        assert settings.chunk_rows == 2000
+
+    def test_loads_from_environment_without_dotenv_file(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GOOGLE_SHEET_URL", "https://sheets.example.test/id")
+        monkeypatch.setenv("GOOGLE_SHEET_NAME", "Catalog")
+        monkeypatch.setenv("GOOGLE_CREDENTIALS_FILE", "/run/secrets/client.json")
+        monkeypatch.setenv("GOOGLE_TOKEN_FILE", "/var/lib/app/token.json")
+
+        settings = load_settings()
+
+        assert settings.spreadsheet_url == "https://sheets.example.test/id"
+        assert settings.sheet_name == "Catalog"
+        assert settings.credentials_file == Path("/run/secrets/client.json")
+        assert settings.token_file == Path("/var/lib/app/token.json")
 
     def test_missing_variable_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -101,7 +112,6 @@ class TestLoadSettings:
             "GOOGLE_SHEET_NAME",
             "GOOGLE_CREDENTIALS_FILE",
             "GOOGLE_TOKEN_FILE",
-            "GOOGLE_OUTPUT_FILE",
         ):
             monkeypatch.delenv(key, raising=False)
 

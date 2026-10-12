@@ -9,10 +9,6 @@ class UploaderConfigurationError(UploaderError):
     """Raised when uploader settings are missing or invalid."""
 
 
-class UploaderAuthenticationError(UploaderError):
-    """Raised when the CMS login response has no supported redirect."""
-
-
 class UploadFileError(UploaderError):
     """Raised when the processed file cannot be uploaded."""
 

@@ -174,3 +174,13 @@ class MergeResult:
     amount_changes: list[tuple[str, float, float]] = field(default_factory=list)
     anomalous_price_articles: list[str] = field(default_factory=list)
     hidden_changes: list[tuple[str, str, str]] = field(default_factory=list)
+
+
+@dataclass
+class CorePipelineOutput:
+    """In-memory outputs produced by one complete catalogue run."""
+
+    processed_csv: bytes
+    excluded_csv: bytes
+    detailed_changes: list[str]
+    updated_duplicate_map: DuplicateMap

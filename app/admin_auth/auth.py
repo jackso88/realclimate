@@ -1,25 +1,23 @@
-"""Session-based authentication for the uploader's CMS requests."""
+"""Create an authenticated CMS session and convert it into a DTO."""
 
-from functools import lru_cache
 import logging
 from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
-from app.uploader.config import load_settings
-from app.uploader.exceptions import UploaderAuthenticationError
-from app.uploader.models import Settings
+from app.admin_auth.exceptions import AdminLoginError
+from app.admin_auth.models import AdminSettings, SessionSnapshot
 
 logger = logging.getLogger(__name__)
 
 
 def extract_javascript_redirect(html: str, page_url: str) -> str:
-    """Extract and resolve the quoted login redirect from response HTML."""
+    """Extract the quoted JavaScript location used by the CMS login page."""
     soup = BeautifulSoup(html, "html.parser")
     for script in soup.find_all("script"):
-        script_text = script.string or script.get_text()
-        _, marker, expression = script_text.partition("window.document.location")
+        text = script.string or script.get_text()
+        _, marker, expression = text.partition("window.document.location")
         if not marker:
             continue
         _, assignment, expression = expression.partition("=")
@@ -29,15 +27,17 @@ def extract_javascript_redirect(html: str, page_url: str) -> str:
         quote = expression[:1]
         if quote not in ("'", '"'):
             continue
-        redirect_path, closing_quote, _ = expression[1:].partition(quote)
+        target, closing_quote, _ = expression[1:].partition(quote)
         if closing_quote:
-            return urljoin(page_url, redirect_path)
+            return urljoin(page_url, target)
+    raise AdminLoginError("Could not find the CMS login redirect")
 
-    raise UploaderAuthenticationError("Could not find a quoted login redirect")
 
-
-def authenticate(settings: Settings, timeout: float = 30) -> requests.Session:
-    """Log in and initialize the CMS context in one cookie-preserving session."""
+def create_session_snapshot(
+    settings: AdminSettings,
+    timeout: float = 30,
+) -> SessionSnapshot:
+    """Authenticate once and return serializable cookies and request headers."""
     session = requests.Session()
     login_url = urljoin(settings.base_url + "/", settings.login_path.lstrip("/"))
     response = session.post(
@@ -67,16 +67,6 @@ def authenticate(settings: Settings, timeout: float = 30) -> requests.Session:
         timeout=timeout,
     )
     response.raise_for_status()
-    logger.info("Uploader authenticated to the CMS")
-    return session
 
-
-@lru_cache(maxsize=1)
-def get_auth_session() -> requests.Session:
-    """Return a cached authenticated session for this uploader process."""
-    return authenticate(load_settings())
-
-
-def clear_auth_session_cache() -> None:
-    """Discard the cached CMS session."""
-    get_auth_session.cache_clear()
+    logger.info("Created authenticated admin session snapshot")
+    return SessionSnapshot.from_session(session)

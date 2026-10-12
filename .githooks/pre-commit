@@ -13,9 +13,9 @@ if ((${#python_files[@]})); then
     if [[ "${file##*/}" == "duplicate_mapping.py" ]]; then
       continue
     fi
-    python -m black "$file"
+    poetry run python -m black "$file"
   done
   git add -- "${python_files[@]}"
 fi
 
-python -m pytest -q
+poetry run python -m pytest -q

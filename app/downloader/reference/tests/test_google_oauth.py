@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.downloader.reference.auth import get_credentials
+from app.downloader.reference.google_oauth import get_credentials
 
 SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
 
@@ -31,7 +31,7 @@ class TestGetCredentials:
         mock_creds.valid = True
 
         with patch(
-            "app.downloader.reference.auth.UserCredentials.from_authorized_user_file",
+            "app.downloader.reference.google_oauth.UserCredentials.from_authorized_user_file",
             return_value=mock_creds,
         ) as from_file:
             result = get_credentials(creds_file, token_file, SCOPES)
@@ -53,10 +53,10 @@ class TestGetCredentials:
 
         with (
             patch(
-                "app.downloader.reference.auth.UserCredentials.from_authorized_user_file",
+                "app.downloader.reference.google_oauth.UserCredentials.from_authorized_user_file",
                 return_value=mock_creds,
             ),
-            patch("app.downloader.reference.auth.Request"),
+            patch("app.downloader.reference.google_oauth.Request"),
         ):
             result = get_credentials(creds_file, token_file, SCOPES)
 
@@ -76,10 +76,10 @@ class TestGetCredentials:
 
         with (
             patch(
-                "app.downloader.reference.auth.UserCredentials.from_authorized_user_file",
+                "app.downloader.reference.google_oauth.UserCredentials.from_authorized_user_file",
             ) as from_file,
             patch(
-                "app.downloader.reference.auth.InstalledAppFlow.from_client_secrets_file",
+                "app.downloader.reference.google_oauth.InstalledAppFlow.from_client_secrets_file",
                 return_value=mock_flow,
             ),
         ):
@@ -109,11 +109,11 @@ class TestGetCredentials:
 
         with (
             patch(
-                "app.downloader.reference.auth.UserCredentials.from_authorized_user_file",
+                "app.downloader.reference.google_oauth.UserCredentials.from_authorized_user_file",
                 side_effect=ValueError("bad token"),
             ),
             patch(
-                "app.downloader.reference.auth.InstalledAppFlow.from_client_secrets_file",
+                "app.downloader.reference.google_oauth.InstalledAppFlow.from_client_secrets_file",
                 return_value=mock_flow,
             ),
         ):

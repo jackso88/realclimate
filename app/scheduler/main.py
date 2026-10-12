@@ -1,0 +1,34 @@
+"""Weekday hourly daemon that triggers the catalogue pipeline."""
+
+import logging
+import os
+
+from app.logging_config import configure_logging
+from app.scheduler.producer import publish_core_run
+from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+logger = logging.getLogger(__name__)
+
+
+def main() -> None:
+    """Run at the top of each hour from 09:00 through 17:00 Minsk time."""
+
+    configure_logging()
+    timezone = os.getenv("SCHEDULE_TIMEZONE", "Europe/Minsk")
+    scheduler = BlockingScheduler(timezone=timezone)
+    scheduler.add_job(publish_core_run(), "date")
+    # scheduler.add_job(
+    #     publish_core_run,
+    #     CronTrigger(day_of_week="mon-fri", hour="9-17", minute=0, timezone=timezone),
+    #     id="hourly-catalogue-run",
+    #     max_instances=1,
+    #     coalesce=True,
+    #     misfire_grace_time=300,
+    # )
+    logger.info("Scheduler active: weekdays 09:00–17:00 (%s)", timezone)
+    scheduler.start()
+
+
+if __name__ == "__main__":
+    main()

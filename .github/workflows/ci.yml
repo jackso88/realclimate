@@ -14,10 +14,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+      - name: Install Poetry
+        run: pipx install poetry==2.5.1
+      - name: Cache Poetry environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: poetry install --with dev --no-interaction --no-ansi
       - name: Check formatting with Black
-        run: python -m black --check --workers 1 app
+        run: poetry run python -m black --check --workers 1 app
       - name: Run test suite
-        run: python -m pytest -q
+        run: poetry run python -m pytest -q

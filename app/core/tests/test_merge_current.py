@@ -8,17 +8,13 @@ Run with::
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.core.merge_current import (
     build_new_row,
     column_short_key,
     format_merge_report,
     is_anomalous_price_change,
-    load_current_csv,
     merge_records_into_current,
     resolve_hidden_flag_change,
-    write_current_csv,
 )
 from app.core.models import ExcludedRecord, ProductRecord
 
@@ -114,32 +110,6 @@ class TestColumnShortKey:
 
     def test_strips_surrounding_whitespace(self) -> None:
         assert column_short_key("  article  :  Артикул  ") == "article"
-
-
-# --------------------------------------------------------------------------
-# current.csv read/write round-trip
-# --------------------------------------------------------------------------
-
-
-class TestCurrentCsvRoundTrip:
-    def test_write_then_load_preserves_header_and_rows(self, tmp_path: Path) -> None:
-        rows = [make_current_row("NC-1"), make_current_row("NC-2")]
-        path = tmp_path / "current.csv"
-
-        write_current_csv(HEADER, rows, path)
-        loaded_header, loaded_rows = load_current_csv(path)
-
-        assert loaded_header == HEADER
-        assert loaded_rows == rows
-
-    def test_cyrillic_round_trips_cleanly(self, tmp_path: Path) -> None:
-        rows = [make_current_row("НС-1", name="Кондиционер Electrolux")]
-        path = tmp_path / "current.csv"
-
-        write_current_csv(HEADER, rows, path)
-        _, loaded_rows = load_current_csv(path)
-
-        assert loaded_rows[0]["name : Название"] == "Кондиционер Electrolux"
 
 
 # --------------------------------------------------------------------------

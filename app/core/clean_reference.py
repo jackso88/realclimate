@@ -1,103 +1,20 @@
-# -*- coding: utf-8 -*-
-"""Clean the "1. Для заливки" sheet of the reference catalogue and
-merge the result into an existing current.csv export.
-
-The reference catalogue can come from either a ``.xlsx`` workbook
-(read via openpyxl) or a plain ``.csv`` export of just that one sheet
-(e.g. ``reference_auto.csv``, downloaded straight from Google Sheets
-via File -> Download -> Comma-separated values, or an auto-published
-CSV link) — ``load_source_rows`` picks the right reader from the file
-extension. The CSV path exists because Drive API's ``.xlsx`` export
-of the whole workbook has occasionally come back with unresolved
-formulas (missing "Дилер" prices, odd "Наличие" values); exporting
-just the one sheet as CSV avoids that.
-
-Pipeline
---------
-1.  Read the "1. Для заливки" sheet (xlsx) or its CSV export.
-2.  Track the current section/group name from divider rows (no
-    нс-код, text in the "Модель" column position) so every product
-    row knows its category — used as current.csv's ``folder``.
-3.  Drop rows whose product category is excluded, checking BOTH the
-    "Тип" and "Серия" columns.
-4.  Drop rows with an undefined "Тип" (empty cell).
-5.  Drop rows where the retail price OR the dealer price is missing
-    (unparseable). A retail price of exactly 0 is NOT dropped — it's
-    kept and instead hides the product in current.csv (``hidden = 1``,
-    flipped back to ``0`` the first time the price leaves 0; see
-    ``merge_current.resolve_hidden_flag_change``).
-6.  For нс-коды that repeat, assign a stable, persisted unique code
-    (``<code>-D01``, …) via ``duplicate_mapping.py``
-    (see ``helpers.assign_duplicate_codes`` for the stability
-    contract).
-7.  The cleaned catalogue is kept in memory (``ProcessResult.kept``)
-    — it is no longer written to its own CSV file — and merged into
-    current.csv:
-        - an existing article only has its amount/price refreshed;
-        - an old artificial duplicate code that vanished is resolved
-          by matching on "Модель" and renamed in place;
-        - anything left over is appended as a brand-new row.
-8.  Two files are written:
-        - the updated current.csv;
-        - every excluded row plus the reason it was dropped
-          (``for_zalivka_excluded.csv``), for manual review.
-"""
+"""Pure row-cleaning operations for supplier catalogue data."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Iterable
-import logging
 
-
+from app.core.models import DuplicateMap, ExcludedRecord, ProcessResult, ProductRecord
 from app.core.utils import (
+    REASON_DUPLICATE_MODEL,
+    REASON_UNRESOLVED_GROUP,
     assign_duplicate_codes,
     category_exclusion_reason,
-    load_duplicate_map,
     map_category_to_folder,
     normalize_ws,
     parse_price,
     price_exclusion_reason,
-    REASON_DUPLICATE_MODEL,
-    REASON_UNRESOLVED_GROUP,
-    write_duplicate_map,
 )
-from app.core.merge_current import (
-    format_merge_report,
-    load_current_csv,
-    merge_records_into_current,
-    write_current_csv,
-)
-from app.core.models import DuplicateMap, ExcludedRecord, ProcessResult, ProductRecord
-from app.core.source_io import load_source_rows, write_excluded_csv
-
-# --------------------------------------------------------------------------
-# Configuration
-# --------------------------------------------------------------------------
-
-logger = logging.getLogger(__name__)
-
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parents[1]
-
-SRC_PATH = PROJECT_ROOT / "storage" / "uploads" / "reference.csv"
-SHEET_NAME = "1. Для заливки"
-
-CURRENT_CSV_PATH = PROJECT_ROOT / "storage" / "uploads" / "current.csv"
-CURRENT_CSV_OUT_PATH = PROJECT_ROOT / "storage" / "outputs" / "processed.csv"
-
-OUT_DIR = PROJECT_ROOT / "storage" / "outputs"
-EXCLUDED_CSV_PATH = OUT_DIR / "for_zalivka_excluded.csv"
-
-# Module that stores the persistent нс-код duplicate mapping. Lives
-# next to this script so it can be committed to version control and
-# edited by hand if needed.
-DUPLICATE_MAPPING_PATH = BASE_DIR / "duplicate_mapping.py"
-
-
-# --------------------------------------------------------------------------
-# Row-level processing (pure — no file I/O, easy to unit-test)
-# --------------------------------------------------------------------------
 
 
 def _drop_duplicate_models(
@@ -253,84 +170,3 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
         renamed_count=renamed_count,
         skipped_divider_rows=skipped_divider_rows,
     )
-
-
-def main(
-    src_path: Path = SRC_PATH,
-    sheet_name: str = SHEET_NAME,
-    current_csv_path: Path = CURRENT_CSV_PATH,
-    current_csv_out_path: Path = CURRENT_CSV_OUT_PATH,
-    excluded_csv_path: Path = EXCLUDED_CSV_PATH,
-    mapping_path: Path = DUPLICATE_MAPPING_PATH,
-) -> ProcessResult:
-    """Run the full pipeline end-to-end: clean the source, merge into
-    current.csv, and write the excluded-rows review file.
-
-    Args:
-        src_path: Source ``.xlsx`` workbook.
-        sheet_name: Sheet to read from ``src_path``.
-        current_csv_path: Existing current.csv export to merge into.
-        current_csv_out_path: Where to write the merged current.csv.
-        excluded_csv_path: Where to write the excluded rows + reasons.
-        mapping_path: Where the persistent duplicate-code mapping
-            module lives (read at the start, rewritten at the end).
-
-    Returns:
-        The ``ProcessResult`` for the run — ``result.kept`` is the
-        in-memory cleaned catalogue, available for any further use
-        beyond the current.csv merge.
-    """
-    logger.info("Loading source data from %s", src_path)
-    rows = load_source_rows(src_path, sheet_name)
-    existing_map = load_duplicate_map(mapping_path)
-
-    result = process_rows(rows, existing_map)
-
-    header, current_rows = load_current_csv(current_csv_path)
-    merge_result = merge_records_into_current(
-        result.kept, header, current_rows, result.updated_map, excluded=result.excluded
-    )
-    write_current_csv(merge_result.header, merge_result.rows, current_csv_out_path)
-
-    write_excluded_csv(result.excluded, excluded_csv_path)
-    write_duplicate_map(result.updated_map, mapping_path)
-
-    logger.info(
-        "Source rows=%d, skipped dividers=%d, excluded=%d, kept=%d, "
-        "new duplicate suffixes=%d",
-        len(rows),
-        result.skipped_divider_rows,
-        len(result.excluded),
-        len(result.kept),
-        result.renamed_count,
-    )
-    logger.info(
-        "Merge updated=%d, renamed=%d, added=%d, removed=%d, untouched=%d",
-        len(merge_result.updated_articles),
-        len(merge_result.renamed_articles),
-        len(merge_result.added_articles),
-        len(merge_result.removed_articles),
-        len(merge_result.untouched_articles),
-    )
-    for old, new in merge_result.renamed_articles:
-        logger.info("Renamed article %s -> %s", old, new)
-    logger.info("Merged current CSV written to %s", current_csv_out_path)
-    logger.info("Excluded rows written to %s", excluded_csv_path)
-    logger.info("Duplicate mapping written to %s", mapping_path)
-
-    for report_line in format_merge_report(merge_result):
-        logger.info("%s", report_line)
-
-    return result
-
-
-if __name__ == "__main__":
-    from app.core.exceptions import CoreProcessingError
-    from app.logging_config import configure_logging
-
-    configure_logging()
-    try:
-        main()
-    except CoreProcessingError as error:
-        logger.exception("Catalog processing failed: %s", error)
-        raise SystemExit(1) from error
