@@ -3,14 +3,13 @@
 import logging
 import re
 from time import monotonic
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from uuid import uuid4
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from confluent_kafka import Consumer, Producer
 
+from app.messaging.config import load_client_settings
 from app.messaging.exceptions import (
     RemoteServiceError,
     RequestTimeoutError,
@@ -48,9 +47,10 @@ class KafkaBus:
         from confluent_kafka import Producer
 
         self.bootstrap_servers = bootstrap_servers
+        self.client_configuration = load_client_settings(bootstrap_servers).to_dict()
         self.producer = Producer(
             {
-                "bootstrap.servers": bootstrap_servers,
+                **self.client_configuration,
                 "message.max.bytes": 80_000_000,
             }
         )
@@ -98,7 +98,7 @@ class KafkaBus:
 
         consumer = Consumer(
             {
-                "bootstrap.servers": self.bootstrap_servers,
+                **self.client_configuration,
                 "group.id": f"state-reader-{uuid4()}",
                 "enable.auto.commit": False,
                 "auto.offset.reset": "latest",
@@ -153,7 +153,7 @@ class KafkaBus:
         correlation_id = str(uuid4())
         consumer = Consumer(
             {
-                "bootstrap.servers": self.bootstrap_servers,
+                **self.client_configuration,
                 "group.id": response_group,
                 "enable.auto.commit": False,
                 "auto.offset.reset": "latest",
@@ -225,7 +225,7 @@ def run_consumer(
     bus = KafkaBus(bootstrap_servers)
     consumer = Consumer(
         {
-            "bootstrap.servers": bootstrap_servers,
+            **load_client_settings(bootstrap_servers).to_dict(),
             "group.id": group_id,
             "enable.auto.commit": False,
             "auto.offset.reset": "earliest",

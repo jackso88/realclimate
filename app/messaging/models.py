@@ -1,9 +1,9 @@
 """Serializable Kafka message envelopes."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, Mapping
 from uuid import uuid4
 
 
@@ -71,3 +71,68 @@ class Envelope:
             TypeError: If the JSON object does not match the envelope fields.
         """
         return cls(**json.loads(value.decode("utf-8")))
+
+
+@dataclass(frozen=True)
+class KafkaClientSettings:
+    """Connection and authentication settings for a Kafka client.
+
+    The password is excluded from the generated representation to reduce the
+    chance of exposing it through debug logs.
+    """
+
+    bootstrap_servers: str
+    username: str = field(repr=False)
+    password: str = field(repr=False)
+    ca_location: str
+    security_protocol: str = "SASL_SSL"
+    sasl_mechanism: str = "SCRAM-SHA-512"
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the settings into a ``confluent-kafka`` config mapping.
+
+        Returns:
+            A new mapping of Kafka client property names to configured values.
+            It includes the SASL password and must be handled as secret data.
+        """
+        return {
+            "bootstrap.servers": self.bootstrap_servers,
+            "security.protocol": self.security_protocol,
+            "sasl.mechanism": self.sasl_mechanism,
+            "sasl.username": self.username,
+            "sasl.password": self.password,
+            "ssl.ca.location": self.ca_location,
+        }
+
+    @classmethod
+    def from_dict(cls, values: Mapping[str, object]) -> "KafkaClientSettings":
+        """Deserialize a ``confluent-kafka`` config mapping into this DTO.
+
+        Args:
+            values: Mapping containing the bootstrap address, security
+                protocol, SASL mechanism and credentials, and CA certificate
+                path under their ``confluent-kafka`` property names.
+
+        Returns:
+            An immutable settings DTO.
+
+        Raises:
+            ValueError: If a required property is missing, empty, or not a
+                string.
+        """
+        property_names = {
+            "bootstrap_servers": "bootstrap.servers",
+            "security_protocol": "security.protocol",
+            "sasl_mechanism": "sasl.mechanism",
+            "username": "sasl.username",
+            "password": "sasl.password",
+            "ca_location": "ssl.ca.location",
+        }
+        settings: dict[str, str] = {}
+        for field_name, property_name in property_names.items():
+            value = values.get(property_name)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"Missing or invalid Kafka property: {property_name}")
+            settings[field_name] = value
+
+        return cls(**settings)

@@ -3,7 +3,7 @@
 
 Run with::
 
-    pytest test_clean_reference.py -v
+    pytest test_core_clean_reference.py -v
 """
 
 from __future__ import annotations

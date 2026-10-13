@@ -3,7 +3,7 @@
 
 Run with::
 
-    pytest test_utils.py -v
+    pytest test_core_utils.py -v
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 
 Run with::
 
-    pytest test_merge_current.py -v
+    pytest test_core_merge_current.py -v
 """
 
 from __future__ import annotations

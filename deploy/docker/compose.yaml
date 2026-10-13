@@ -4,7 +4,12 @@ x-app-build: &app_build
 
 x-common-env: &common_env
   KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+  KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:?Set KAFKA_SASL_USERNAME in .env}
+  KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:?Set KAFKA_SASL_PASSWORD in .env}
+  KAFKA_SSL_CA_LOCATION: /run/secrets/kafka/kafka-ca.pem
   TZ: Europe/Minsk
+
+x-kafka-ca-volume: &kafka_ca_volume kafka_client_certs:/run/secrets/kafka:ro
 
 x-cms-env: &cms_env
   <<: *common_env
@@ -20,89 +25,104 @@ x-auth-env: &auth_env
   TAPTOP_DESIGN_ID: ${TAPTOP_DESIGN_ID:?Set TAPTOP_DESIGN_ID in .env}
 
 services:
+  kafka_certs:
+    image: apache/kafka:3.9.1
+    user: "0:0"
+    entrypoint: ["/bin/bash", "/opt/kafka/certs/generate-certs.sh"]
+    environment:
+      KAFKA_TLS_STORE_PASSWORD: ${KAFKA_TLS_STORE_PASSWORD:?Set KAFKA_TLS_STORE_PASSWORD in .env}
+    volumes:
+      - kafka_server_certs:/certs/server
+      - kafka_client_certs:/certs/client
+      - ./kafka/generate-certs.sh:/opt/kafka/certs/generate-certs.sh:ro
+    restart: "no"
+
   kafka:
     image: apache/kafka:3.9.1
     hostname: kafka
+    depends_on:
+      kafka_certs: {condition: service_completed_successfully}
     environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: 3
-      KAFKA_LOG_RETENTION_HOURS: 1
-      KAFKA_MESSAGE_MAX_BYTES: 80000000
-      KAFKA_SOCKET_REQUEST_MAX_BYTES: 80000000
-      KAFKA_REPLICA_FETCH_MAX_BYTES: 80000000
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:?Set KAFKA_SASL_USERNAME in .env}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:?Set KAFKA_SASL_PASSWORD in .env}
+      KAFKA_TLS_STORE_PASSWORD: ${KAFKA_TLS_STORE_PASSWORD:?Set KAFKA_TLS_STORE_PASSWORD in .env}
+    entrypoint: ["/bin/bash", "/opt/kafka/custom/broker-entrypoint.sh"]
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "test -f /tmp/kafka-ready"]
       interval: 10s
       timeout: 10s
       retries: 12
     volumes:
       - kafka_data:/var/lib/kafka/data
+      - kafka_server_certs:/run/secrets/kafka-server:ro
+      - kafka_client_certs:/run/secrets/kafka-client:ro
+      - ./kafka/broker-entrypoint.sh:/opt/kafka/custom/broker-entrypoint.sh:ro
 
   kafka_init:
     image: apache/kafka:3.9.1
     depends_on:
       kafka: {condition: service_healthy}
-    entrypoint: ["/bin/sh", "-c"]
+    environment:
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:?Set KAFKA_SASL_USERNAME in .env}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:?Set KAFKA_SASL_PASSWORD in .env}
+      KAFKA_TLS_STORE_PASSWORD: ${KAFKA_TLS_STORE_PASSWORD:?Set KAFKA_TLS_STORE_PASSWORD in .env}
+    entrypoint: ["/bin/bash", "-ec"]
     command:
       - |
-        set -e
+        cat >/tmp/kafka-client.properties <<EOF
+        security.protocol=SASL_SSL
+        sasl.mechanism=SCRAM-SHA-512
+        sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_SASL_USERNAME}" password="${KAFKA_SASL_PASSWORD}";
+        ssl.truststore.location=/run/secrets/kafka/kafka.truststore.p12
+        ssl.truststore.password=${KAFKA_TLS_STORE_PASSWORD}
+        ssl.truststore.type=PKCS12
+        EOF
+        chmod 600 /tmp/kafka-client.properties
+        create_topic() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+            --command-config /tmp/kafka-client.properties \
+            --create --if-not-exists --partitions 1 --replication-factor 1 "$@"
+        }
+        create_topic --topic core.runs
+        create_topic --topic core.run.responses
+        create_topic --topic core-current-responses
+        create_topic --topic core-reference-responses
+        create_topic --topic downloader.current.requests
+        create_topic --topic downloader.current.responses
+        create_topic --topic downloader.reference.requests
+        create_topic --topic downloader.reference.responses
+        create_topic --topic admin_auth.requests
+        create_topic --topic admin_auth.current.responses
+        create_topic --topic admin_auth.uploader.responses
+        create_topic --topic uploader.requests
+        create_topic --topic core-uploader-responses
+        create_topic --topic notifications
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic core.runs \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic core.run.responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic core-current-responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic core-reference-responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic downloader.current.requests \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic downloader.current.responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic downloader.reference.requests \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic downloader.reference.responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic admin_auth.requests \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic admin_auth.current.responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic admin_auth.uploader.responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic uploader.requests \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic core-uploader-responses \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --create --if-not-exists --topic notifications \
-          --partitions 1 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --command-config /tmp/kafka-client.properties \
           --create --if-not-exists --topic core.duplicate-map.state \
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+    volumes:
+      - *kafka_ca_volume
+    restart: "no"
+
+  kafka_tls_integration_test:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.test
+    profiles: ["integration"]
+    command:
+      - python
+      - -m
+      - unittest
+      - app.messaging.tests.test_messaging_kafka_tls_integration
+      - -v
+    environment:
+      <<: *common_env
+      KAFKA_TLS_INTEGRATION: "1"
+    volumes:
+      - *kafka_ca_volume
+    depends_on:
+      kafka_init: {condition: service_completed_successfully}
     restart: "no"
 
   admin_auth:
@@ -111,6 +131,8 @@ services:
     # Only the authentication service receives account credentials.
     # Other CMS workers receive the access parameters they use directly.
     environment: *auth_env
+    volumes:
+      - *kafka_ca_volume
     depends_on:
       kafka_init: {condition: service_completed_successfully}
     restart: unless-stopped
@@ -123,6 +145,8 @@ services:
       TAPTOP_ACCESS: ${TAPTOP_ACCESS:?Set TAPTOP_ACCESS in .env}
       TAPTOP_VER_ID: ${TAPTOP_VER_ID:?Set TAPTOP_VER_ID in .env}
       TAPTOP_SHOP_ID: ${TAPTOP_SHOP_ID:?Set TAPTOP_SHOP_ID in .env}
+    volumes:
+      - *kafka_ca_volume
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       admin_auth: {condition: service_started}
@@ -132,13 +156,13 @@ services:
     build: *app_build
     command: ["python", "-m", "app.downloader.reference.consumer"]
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      TZ: Europe/Minsk
+      <<: *common_env
       GOOGLE_SHEET_URL: ${GOOGLE_SHEET_URL:?Set GOOGLE_SHEET_URL in .env}
       GOOGLE_SHEET_NAME: ${GOOGLE_SHEET_NAME:?Set GOOGLE_SHEET_NAME in .env}
       GOOGLE_CREDENTIALS_FILE: /run/secrets/google/client_secret.json
       GOOGLE_TOKEN_FILE: /var/lib/app/token.json
     volumes:
+      - *kafka_ca_volume
       - ../../config/google:/var/lib/app
       - ../../config/google:/run/secrets/google:ro
     depends_on:
@@ -149,12 +173,12 @@ services:
     build: *app_build
     command: ["python", "-m", "app.core.consumer"]
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      TZ: Europe/Minsk
+      <<: *common_env
       EXCLUDED_CSV_PATH: /app/storage/outputs/for_zalivka_excluded.csv
       DOWNLOAD_TIMEOUT_SECONDS: ${DOWNLOAD_TIMEOUT_SECONDS:-900}
       IMPORT_TIMEOUT_SECONDS: ${IMPORT_TIMEOUT_SECONDS:-1800}
     volumes:
+      - *kafka_ca_volume
       - ../../storage/outputs:/app/storage/outputs
     depends_on:
       kafka_init: {condition: service_completed_successfully}
@@ -171,6 +195,8 @@ services:
       TAPTOP_ACCESS: ${TAPTOP_ACCESS:?Set TAPTOP_ACCESS in .env}
       TAPTOP_VER_ID: ${TAPTOP_VER_ID:?Set TAPTOP_VER_ID in .env}
       TAPTOP_SHOP_ID: ${TAPTOP_SHOP_ID:?Set TAPTOP_SHOP_ID in .env}
+    volumes:
+      - *kafka_ca_volume
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       admin_auth: {condition: service_started}
@@ -180,26 +206,30 @@ services:
     build: *app_build
     command: ["python", "-m", "app.scheduler.main"]
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      TZ: Europe/Minsk
+      <<: *common_env
       SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-Europe/Minsk}
       CORE_RUN_TIMEOUT_SECONDS: ${CORE_RUN_TIMEOUT_SECONDS:-3600}
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       core: {condition: service_started}
     restart: unless-stopped
+    volumes:
+      - *kafka_ca_volume
 
   notifications:
     build: *app_build
     command: ["python", "-m", "app.notifications.consumer"]
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      TZ: Europe/Minsk
+      <<: *common_env
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?Set TELEGRAM_CHAT_ID in .env}
     depends_on:
       kafka_init: {condition: service_completed_successfully}
     restart: unless-stopped
+    volumes:
+      - *kafka_ca_volume
 
 volumes:
   kafka_data:
+  kafka_server_certs:
+  kafka_client_certs:
