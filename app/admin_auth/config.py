@@ -9,8 +9,36 @@ from app.admin_auth.exceptions import AdminLoginError
 from app.admin_auth.models import AdminSettings
 
 
+def _positive_int(variable: str, default: int) -> int:
+    """Read a positive integer setting with a default value.
+
+    Args:
+        variable: Environment variable to read.
+        default: Value used when the variable is not configured.
+
+    Returns:
+        The parsed positive integer.
+
+    Raises:
+        AdminLoginError: If the value is not a positive integer.
+    """
+    raw_value = os.getenv(variable)
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise AdminLoginError(f"{variable} must be a positive integer") from error
+    if value <= 0:
+        raise AdminLoginError(f"{variable} must be a positive integer")
+    return value
+
+
 def load_settings(env_file: str | Path | None = None) -> AdminSettings:
     """Load and validate the settings required by admin authentication.
+
+    ``ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS`` controls how long the service
+    reuses a serialized authenticated session; it defaults to 14400 seconds (4 hours).
 
     Args:
         env_file: Optional path to an environment file. When omitted, the
@@ -54,6 +82,9 @@ def load_settings(env_file: str | Path | None = None) -> AdminSettings:
         access=os.environ["TAPTOP_ACCESS"],
         ver_id=ver_id,
         design_id=design_id,
+        session_cache_ttl_seconds=_positive_int(
+            "ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS", 14400
+        ),
         login_path=os.getenv("TAPTOP_LOGIN_PATH", "/login"),
         mosaic_path=os.getenv("TAPTOP_MOSAIC_PATH", "/mosaic"),
         form_name=os.getenv("TAPTOP_FORM_NAME", "login_form"),

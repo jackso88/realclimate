@@ -54,6 +54,8 @@ directories keep their existing locations. Compose passes only the variables
 each service needs; Google credentials go only to `downloader_reference`, the
 Telegram token goes to `notifications` and `health_monitor`, and CMS login
 credentials are passed only to `admin_auth`.
+The admin authentication service caches its serialized session snapshot for
+`ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS` (default: 4 hours).
 
 Long-running application containers and the Kafka broker use the
 `unless-stopped` restart policy. To start them automatically after a system

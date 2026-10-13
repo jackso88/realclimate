@@ -5,11 +5,13 @@ import os
 
 from app.admin_auth.auth import create_session_snapshot
 from app.admin_auth.config import load_settings
+from app.admin_auth.session_cache import SessionSnapshotCache
 from app.logging_config import configure_logging
 from app.messaging.kafka import publish_reply, run_consumer
 from app.messaging.topics import ADMIN_AUTH_REQUESTS
 
 logger = logging.getLogger(__name__)
+session_cache = SessionSnapshotCache()
 
 
 def handle_request(message, bus) -> None:
@@ -20,7 +22,8 @@ def handle_request(message, bus) -> None:
         bus: Shared Kafka bus used to publish the correlated reply.
     """
     try:
-        snapshot = create_session_snapshot(load_settings())
+        settings = load_settings()
+        snapshot = session_cache.get(settings, create_session_snapshot)
         publish_reply(bus, message, snapshot.to_payload())
     except Exception as error:
         logger.exception("Admin authentication request failed")

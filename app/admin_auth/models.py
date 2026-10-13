@@ -18,6 +18,7 @@ class AdminSettings:
     access: str
     ver_id: int
     design_id: int
+    session_cache_ttl_seconds: int = 14400
     login_path: str = "/login"
     mosaic_path: str = "/mosaic"
     form_name: str = "login_form"
