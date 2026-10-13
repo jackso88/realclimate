@@ -1,5 +1,9 @@
 # RealClimate catalogue updater
 
+<p align="center">
+  <img src="docs/assets/realclimate-admin.png" alt="RealClimate Admin" width="420">
+</p>
+
 Python services that download catalogue data from Google Sheets and the CMS,
 merge it in memory, and send the result back to the CMS.
 
