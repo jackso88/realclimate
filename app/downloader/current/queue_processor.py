@@ -7,7 +7,7 @@ from pathlib import Path
 import secrets
 from time import monotonic, sleep
 from urllib.parse import unquote, urljoin, urlparse
-from zipfile import is_zipfile
+from zipfile import BadZipFile, ZipFile
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,8 +18,7 @@ from app.downloader.current.exceptions import (
     ExportArchiveError,
     ExportNotReadyError,
 )
-from app.downloader.current.models import DownloadedExport
-from app.downloader.current.utils import DEFAULT_UPLOAD_DIR
+from app.downloader.current.models import DownloadedCsv
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +50,27 @@ EXTRA_FIELDS = (
 
 
 def _admin_url(settings: Settings, path: str) -> str:
-    """Build an admin endpoint URL from the configured CMS base URL."""
+    """Build an absolute CMS URL for an endpoint path.
+
+    Args:
+        settings: CMS settings containing the base API URL.
+        path: Relative endpoint path, with or without a leading slash.
+
+    Returns:
+        Absolute URL rooted at the configured CMS endpoint.
+    """
     return urljoin(f"{settings.cms_url.rstrip('/')}/", path.lstrip("/"))
 
 
 def _access_value(settings: Settings) -> str:
-    """Accept either a raw access value or one copied from an encoded URL."""
+    """Normalize the access value, decoding URL-escaped input once.
+
+    Args:
+        settings: CMS settings containing the raw or URL-encoded access value.
+
+    Returns:
+        The decoded access value for use as an HTTP parameter.
+    """
     return unquote(settings.access)
 
 
@@ -111,6 +125,17 @@ def get_latest_export_cron_num(
     Returns zero when the file list contains no completed ZIP export. The CLI
     uses this snapshot so it will not accidentally download an older archive
     while the newly queued export is still running.
+
+    Args:
+        session: Authenticated CMS session used to fetch the shop view.
+        settings: CMS URL, shop ID, version ID, and access settings.
+        timeout: Maximum number of seconds to wait for the HTTP request.
+
+    Returns:
+        Highest completed export number, or zero if none is listed.
+
+    Raises:
+        requests.RequestException: If the CMS request fails.
     """
     response = session.get(
         _admin_url(settings, "shop2/"),
@@ -126,7 +151,14 @@ def get_latest_export_cron_num(
 
 
 def _shop_view_params(settings: Settings) -> list[tuple[str, str]]:
-    """Build query parameters for the shop view used by queue lookups."""
+    """Build the query string used to retrieve the CMS shop queue.
+
+    Args:
+        settings: Shop, version, and access values for the CMS request.
+
+    Returns:
+        Ordered query parameter pairs, including a random cache buster.
+    """
     return [
         ("act", "view"),
         ("object_id", str(settings.shop_id)),
@@ -195,87 +227,83 @@ def start_product_export(
     return response
 
 
-def download_latest_export(
+def download_latest_export_content(
     session: requests.Session,
     settings: Settings,
-    upload_dir: str | Path = DEFAULT_UPLOAD_DIR,
+    after_cron_num: int,
     timeout: float = 30,
-    after_cron_num: int | None = None,
     wait_timeout: float = 300,
     poll_interval: float = 5,
-) -> DownloadedExport:
-    """Download the ZIP linked from the highest-numbered completed queue task.
+) -> DownloadedCsv:
+    """Wait for a newly queued export, download its ZIP, and extract the CSV.
 
     Args:
-        session: Authenticated requests session.
-        settings: Settings with CMS, shop, version, and access values.
-        upload_dir: Local destination; defaults to ``storage/uploads``.
-        timeout: Timeout in seconds for each HTTP request.
-        after_cron_num: If provided, wait for an export with a larger queue
-            number so an older completed file cannot be mistaken for this job.
-        wait_timeout: Maximum seconds to wait for the newer export.
-        poll_interval: Seconds between queue checks while waiting.
+        session: Authenticated CMS session used for polling and downloading.
+        settings: CMS URL, shop ID, version ID, and access settings.
+        after_cron_num: Queue number observed before the export was submitted;
+            only a newer export is accepted.
+        timeout: Maximum wait for each individual HTTP request, in seconds.
+        wait_timeout: Maximum total time to wait for a new export to finish.
+        poll_interval: Delay between checks of the export queue, in seconds.
 
     Returns:
-        A ``DownloadedExport`` containing the cron number, archive filename,
-        URL, and local path. No metadata sidecar file is written.
+        CSV content and its source archive metadata as a ``DownloadedCsv``.
 
     Raises:
-        requests.HTTPError: If either HTTP request fails.
-        ExportNotReadyError: If no completed ZIP is present in the queue.
-        ExportArchiveError: If the linked response is not a valid ZIP file.
+        requests.RequestException: If a CMS request fails.
+        ExportNotReadyError: If no newer completed export appears in time.
+        ExportArchiveError: If the ZIP is invalid or does not contain exactly
+            one CSV file.
     """
     deadline = monotonic() + wait_timeout
     while True:
-        queue_response = session.get(
+        response = session.get(
             _admin_url(settings, "shop2/"),
             params=_shop_view_params(settings),
             timeout=timeout,
         )
-        queue_response.raise_for_status()
-
+        response.raise_for_status()
         try:
-            cron_num, archive_url = find_latest_export_archive(
-                queue_response.text, settings
-            )
+            cron_num, archive_url = find_latest_export_archive(response.text, settings)
         except ExportNotReadyError:
-            if after_cron_num is None:
-                raise
-            cron_num = 0
-            archive_url = ""
+            cron_num, archive_url = 0, ""
 
-        if after_cron_num is None or cron_num > after_cron_num:
+        if cron_num > after_cron_num:
             break
         if monotonic() >= deadline:
             raise ExportNotReadyError(
-                f"No completed export newer than cron #{after_cron_num} "
-                f"appeared within {wait_timeout:g} seconds"
+                f"No completed export newer than cron #{after_cron_num} appeared "
+                f"within {wait_timeout:g} seconds"
             )
         sleep(poll_interval)
 
     archive_response = session.get(archive_url, timeout=timeout)
     archive_response.raise_for_status()
-
-    archive_bytes = archive_response.content
-    if not is_zipfile(BytesIO(archive_bytes)):
-        raise ExportArchiveError("The export link did not return a valid ZIP archive")
-
     archive_filename = Path(urlparse(archive_url).path).name
     if not archive_filename:
         raise ExportArchiveError("The ZIP download URL has no filename")
+    try:
+        with ZipFile(BytesIO(archive_response.content)) as archive:
+            csv_members = [
+                member
+                for member in archive.infolist()
+                if not member.is_dir() and member.filename.lower().endswith(".csv")
+            ]
+            if len(csv_members) != 1:
+                raise ExportArchiveError(
+                    f"Expected exactly one CSV in ZIP, found {len(csv_members)}"
+                )
+            csv_member = csv_members[0]
+            content = archive.read(csv_member)
+    except BadZipFile as error:
+        raise ExportArchiveError("The export response was not a valid ZIP") from error
 
-    destination = Path(upload_dir)
-    destination.mkdir(parents=True, exist_ok=True)
-    archive_path = destination / archive_filename
-    temporary_archive = archive_path.with_name(archive_path.name + ".part")
-    temporary_archive.write_bytes(archive_bytes)
-    temporary_archive.replace(archive_path)
-
-    return DownloadedExport(
+    logger.info("Downloaded export cron #%s into memory", cron_num)
+    return DownloadedCsv(
         cron_num=cron_num,
+        filename=Path(csv_member.filename).name,
+        content=content,
         archive_filename=archive_filename,
-        archive_path=archive_path,
-        archive_url=archive_url,
     )
 
 

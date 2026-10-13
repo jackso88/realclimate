@@ -14,10 +14,48 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+      - name: Install Poetry
+        run: pipx install poetry==2.5.1
+      - name: Cache Poetry environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: poetry install --with dev --no-interaction --no-ansi
       - name: Check formatting with Black
-        run: python -m black --check --workers 1 app
+        run: poetry run python -m black --check --workers 1 app
       - name: Run test suite
-        run: python -m pytest -q
+        run: poetry run python -m pytest -q
+
+  kafka-tls-integration:
+    runs-on: ubuntu-latest
+    env:
+      KAFKA_SASL_USERNAME: ci-kafka-user
+      KAFKA_SASL_PASSWORD: ci-kafka-secret
+      KAFKA_TLS_STORE_PASSWORD: ci-store-secret
+      TAPTOP_CMS_URL: https://example.invalid
+      TAPTOP_BASE_URL: https://example.invalid
+      TAPTOP_USERNAME: ci-user
+      TAPTOP_PASSWORD: ci-password
+      TAPTOP_ACCESS: u;123456
+      TAPTOP_VER_ID: "1"
+      TAPTOP_DESIGN_ID: "1"
+      TAPTOP_SHOP_ID: "1"
+      GOOGLE_SHEET_URL: https://example.invalid/sheet
+      GOOGLE_SHEET_NAME: ci-test
+      TELEGRAM_BOT_TOKEN: 123456:ci-test
+      TELEGRAM_CHAT_ID: "123456"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Check Docker Compose
+        run: docker compose version
+      - name: Run live Kafka TLS integration checks
+        run: >-
+          docker compose -f deploy/docker/compose.yaml --profile integration
+          run --build --rm kafka_tls_integration_test
+      - name: Stop Kafka and remove test volumes
+        if: always()
+        run: >-
+          docker compose -f deploy/docker/compose.yaml down --volumes --remove-orphans

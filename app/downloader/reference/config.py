@@ -6,6 +6,7 @@ resolved against the directory that contains the ``.env`` file.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -63,7 +64,7 @@ def _resolve_path(value: str, base_dir: Path) -> Path:
 
 
 def load_settings(dotenv_path: Path | None = None) -> Settings:
-    """Load application settings from a ``.env`` file.
+    """Load application settings from environment variables or a ``.env`` file.
 
     Required environment variables:
 
@@ -71,31 +72,43 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
     * ``GOOGLE_SHEET_NAME``
     * ``GOOGLE_CREDENTIALS_FILE``
     * ``GOOGLE_TOKEN_FILE``
-    * ``GOOGLE_OUTPUT_FILE``
 
     Args:
         dotenv_path: Explicit path to the ``.env`` file. When omitted,
-            the function looks for ``.env`` two levels above the package
-            directory (project root).
+            the function looks for ``.env`` at the project root, four parent
+            directories above this module.
 
     Returns:
         A frozen :class:`Settings` instance.
 
     Raises:
-        FileNotFoundError: If the ``.env`` file does not exist.
-        RuntimeError: If a required environment variable is missing.
+        FileNotFoundError: If an explicitly supplied ``.env`` file is missing.
+        ReferenceConfigurationError: If a required environment variable is missing.
     """
+    explicit_dotenv_path = dotenv_path is not None
     if dotenv_path is None:
         # Project root is four levels above this package module.
         dotenv_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
 
     base_dir = dotenv_path.resolve().parent
-    if not dotenv_path.is_file():
+    if explicit_dotenv_path and not dotenv_path.is_file():
         raise FileNotFoundError(f".env not found: {dotenv_path}")
 
-    load_dotenv(dotenv_path, override=False)
+    if dotenv_path.is_file():
+        load_dotenv(dotenv_path, override=False)
 
     def required(name: str) -> str:
+        """Read a non-empty required setting from the process environment.
+
+        Args:
+            name: Environment variable name to read.
+
+        Returns:
+            The configured string value.
+
+        Raises:
+            ReferenceConfigurationError: If the setting is missing or empty.
+        """
         value = os.getenv(name)
         if not value:
             raise ReferenceConfigurationError(f"Missing environment variable: {name}")
@@ -106,5 +119,17 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         sheet_name=required("GOOGLE_SHEET_NAME"),
         credentials_file=_resolve_path(required("GOOGLE_CREDENTIALS_FILE"), base_dir),
         token_file=_resolve_path(required("GOOGLE_TOKEN_FILE"), base_dir),
-        output_file=_resolve_path(required("GOOGLE_OUTPUT_FILE"), base_dir),
+    )
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Configure this service's standard console log format.
+
+    Args:
+        level: Minimum severity to emit; defaults to ``logging.INFO``.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )

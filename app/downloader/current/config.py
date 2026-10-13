@@ -1,5 +1,6 @@
-"""Load application settings from environment variables and an optional .env file."""
+"""Configuration for the current catalogue downloader."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -10,72 +11,68 @@ from app.downloader.current.models import Settings
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:
-    """Load and validate settings, preferring process environment variables.
+    """Load and validate the CMS settings required by the exporter.
 
     Args:
-        env_file: Path to the dotenv file. Existing process variables take
-            precedence over values in this file.
+        env_file: Optional environment file to load. If omitted, the project
+            root ``.env`` is loaded when present; existing process variables
+            take precedence.
 
     Returns:
-        Validated settings for the admin client.
+        CMS URL, shop ID, version ID, and access value as immutable settings.
 
     Raises:
-        ValueError: If a required setting is missing, the base URL is invalid,
-            or an export ID is not an integer.
+        ConfigurationError: If a required value is missing or invalid.
     """
     if env_file is None:
-        # config.py is under app/downloader/current; .env belongs to the repo root.
         env_file = Path(__file__).resolve().parents[3] / ".env"
-
     load_dotenv(dotenv_path=env_file, override=False)
 
-    required = (
-        "TAPTOP_DESIGN_ID",
-        "TAPTOP_BASE_URL",
-        "TAPTOP_USERNAME",
-        "TAPTOP_PASSWORD",
-        "TAPTOP_CMS_URL",
-        "TAPTOP_SHOP_ID",
-        "TAPTOP_VER_ID",
-        "TAPTOP_ACCESS",
-    )
+    required = ("TAPTOP_CMS_URL", "TAPTOP_SHOP_ID", "TAPTOP_VER_ID", "TAPTOP_ACCESS")
     missing = [name for name in required if not os.getenv(name)]
     if missing:
         raise ConfigurationError(
             f"Missing required environment setting(s): {', '.join(missing)}"
         )
 
-    base_url = os.environ["TAPTOP_BASE_URL"].rstrip("/")
     cms_url = os.environ["TAPTOP_CMS_URL"].rstrip("/")
-
-    if not base_url.startswith(("https://", "http://")):
-        raise ConfigurationError("TAPTOP_BASE_URL must start with http:// or https://")
-
-    shop_id = _required_integer("TAPTOP_SHOP_ID")
-    ver_id = _required_integer("TAPTOP_VER_ID")
-    design_id = _required_integer("TAPTOP_DESIGN_ID")
+    if not cms_url.startswith(("https://", "http://")):
+        raise ConfigurationError("TAPTOP_CMS_URL must start with http:// or https://")
 
     return Settings(
-        ver_id=ver_id,
-        shop_id=shop_id,
         cms_url=cms_url,
-        base_url=base_url,
-        design_id=design_id,
+        shop_id=_required_integer("TAPTOP_SHOP_ID"),
+        ver_id=_required_integer("TAPTOP_VER_ID"),
         access=os.environ["TAPTOP_ACCESS"],
-        username=os.environ["TAPTOP_USERNAME"],
-        password=os.environ["TAPTOP_PASSWORD"],
-        login_path=os.getenv("TAPTOP_LOGIN_PATH", "/login"),
-        form_name=os.getenv("TAPTOP_FORM_NAME", "login_form"),
-        mosaic_path=os.getenv("TAPTOP_MOSAIC_PATH", "/mosaic"),
-        username_field=os.getenv("TAPTOP_USERNAME_FIELD", "email"),
-        password_field=os.getenv("TAPTOP_PASSWORD_FIELD", "password"),
     )
 
 
 def _required_integer(name: str) -> int:
-    """Read a required integer setting and report invalid values clearly."""
-    value = os.environ[name]
+    """Read a required environment variable as an integer.
+
+    Args:
+        name: Environment variable name to read.
+
+    Returns:
+        The variable's parsed integer value.
+
+    Raises:
+        ConfigurationError: If the value is not a valid integer.
+    """
     try:
-        return int(value)
+        return int(os.environ[name])
     except ValueError as error:
         raise ConfigurationError(f"{name} must be an integer") from error
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Configure this service's standard console log format.
+
+    Args:
+        level: Minimum severity to emit; defaults to ``logging.INFO``.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )

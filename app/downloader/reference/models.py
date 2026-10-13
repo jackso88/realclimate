@@ -12,5 +12,3 @@ class Settings:
     sheet_name: str
     credentials_file: Path
     token_file: Path
-    output_file: Path
-    chunk_rows: int = 2000

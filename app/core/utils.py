@@ -5,18 +5,15 @@ Grouped into three areas:
     - cell-level parsing (``normalize_ws``, ``parse_price``, …);
     - exclusion rules (``category_exclusion_reason``,
       ``price_exclusion_reason``);
-    - duplicate-нс-код handling (``assign_duplicate_codes`` and the
-      module read/write helpers for the persisted mapping);
+    - duplicate-нс-код handling (``assign_duplicate_codes``);
     - slug / URL generation for new current.csv rows
       (``transliterate_ru``, ``slugify``, ``build_unique_sef_url``).
 """
 
 from __future__ import annotations
 
-import importlib.util
 import re
 from collections import defaultdict
-from pathlib import Path
 from typing import Optional
 
 from app.core.models import DuplicateKey, DuplicateMap, ProductRecord
@@ -35,7 +32,7 @@ def normalize_ws(value: object) -> str:
     type alike.
 
     Args:
-        value: Raw cell value as returned by openpyxl (``str``,
+        value: Raw cell value returned by the spreadsheet API (``str``,
             ``int``, ``float`` or ``None``).
 
     Returns:
@@ -401,59 +398,6 @@ def assign_duplicate_codes(
                 renamed_count += 1
 
     return items, updated_map, renamed_count
-
-
-def load_duplicate_map(path: Path) -> DuplicateMap:
-    """Load ``DUPLICATE_CODE_MAP`` from a duplicate-mapping module.
-
-    Uses ``importlib`` (rather than a plain ``import``) so the module
-    can live anywhere on disk, and returns an empty mapping if the
-    file does not exist yet (first run).
-
-    Args:
-        path: Path to the ``duplicate_mapping.py`` module.
-
-    Returns:
-        The loaded mapping, or an empty dict if the file is missing.
-    """
-    if not path.exists():
-        return {}
-
-    spec = importlib.util.spec_from_file_location("duplicate_mapping", path)
-    if spec is None or spec.loader is None:  # pragma: no cover - defensive
-        return {}
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return dict(getattr(module, "DUPLICATE_CODE_MAP", {}))
-
-
-def write_duplicate_map(mapping: DuplicateMap, path: Path) -> None:
-    """Write ``mapping`` out as a self-contained, human-editable Python
-    module, sorted by key for a stable, diff-friendly file.
-
-    Args:
-        mapping: The duplicate mapping to persist.
-        path: Destination path for the generated module.
-    """
-    lines = [
-        '"""Persistent mapping of duplicate нс-коды to their assigned',
-        "unique codes. Auto-generated and updated by clean_reference.py",
-        "on every run — safe to edit by hand, entries you add are kept.",
-        '"""',
-        "",
-        "# key: (original_code, model, occurrence_of_this_code_model_pair)",
-        "# value: assigned unique code (bare code for the first",
-        "#        occurrence, '-D01' / '-D02' / ... for the rest)",
-        "DUPLICATE_CODE_MAP: dict[tuple[str, str, int], str] = {",
-    ]
-    for key in sorted(mapping.keys()):
-        code, model, occurrence = key
-        value = mapping[key]
-        lines.append(f"    {(code, model, occurrence)!r}: {value!r},")
-    lines.append("}")
-    lines.append("")
-
-    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 # --------------------------------------------------------------------------

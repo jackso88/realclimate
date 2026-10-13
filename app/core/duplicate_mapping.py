@@ -1,7 +1,4 @@
-"""Persistent mapping of duplicate нс-коды to their assigned
-unique codes. Auto-generated and updated by clean_reference.py
-on every run — safe to edit by hand, entries you add are kept.
-"""
+"""Seed duplicate-code mapping loaded when the Kafka state is empty."""
 
 # key: (original_code, model, occurrence_of_this_code_model_pair)
 # value: assigned unique code (bare code for the first

@@ -1,27 +1,16 @@
 """Data transfer objects used by the uploader service."""
 
 from dataclasses import dataclass
-from pathlib import Path
 
 
 @dataclass(frozen=True)
 class Settings:
-    """CMS login, endpoint, and local processed-file settings."""
+    """CMS shop and endpoint settings; admin_auth owns login credentials."""
 
     ver_id: int
     access: str
     shop_id: int
     cms_url: str
-    base_url: str
-    username: str
-    password: str
-    design_id: int
-    processed_file: Path
-    login_path: str = "/login"
-    mosaic_path: str = "/mosaic"
-    form_name: str = "login_form"
-    username_field: str = "email"
-    password_field: str = "password"
 
 
 @dataclass(frozen=True)

@@ -12,22 +12,53 @@ from app.uploader.models import ImportQueueItem, Settings
 
 
 def admin_url(settings: Settings, path: str) -> str:
-    """Build a CMS endpoint URL using the configured CMS base URL."""
+    """Build an absolute CMS endpoint URL from the configured base URL.
+
+    Args:
+        settings: Uploader settings containing the CMS base URL.
+        path: Absolute or relative path of the CMS endpoint.
+
+    Returns:
+        The joined endpoint URL, with duplicate boundary slashes normalized.
+    """
     return urljoin(f"{settings.cms_url.rstrip('/')}/", path.lstrip("/"))
 
 
 def access_value(settings: Settings) -> str:
-    """Decode an access token copied from an encoded browser URL once."""
+    """Decode the configured URL-encoded CMS access token exactly once.
+
+    Args:
+        settings: Uploader settings containing the encoded access token.
+
+    Returns:
+        The access token decoded once for use as a request parameter.
+    """
     return unquote(settings.access)
 
 
 def random_query_value() -> str:
-    """Return a short cache-busting request parameter."""
+    """Generate a four-digit cache-busting request parameter.
+
+    Returns:
+        A decimal string from ``1000`` through ``9999``.
+    """
     return str(secrets.randbelow(9000) + 1000)
 
 
 def extract_uploaded_file_id(html: str, filename: str) -> str:
-    """Find ``file_id`` for the uploaded file in ``file_json`` form inputs."""
+    """Find the CMS file ID matching an uploaded filename in the response HTML.
+
+    Args:
+        html: HTML returned by the CMS file upload endpoint.
+        filename: Local filename submitted for upload. The full name and stem
+            are both checked against the CMS file records.
+
+    Returns:
+        The matching file ID converted to a string.
+
+    Raises:
+        UploadResponseError: If no matching upload record contains a file ID.
+    """
     soup = BeautifulSoup(html, "html.parser")
     requested_name = Path(filename).name
     requested_stem = Path(filename).stem
@@ -51,7 +82,15 @@ def extract_uploaded_file_id(html: str, filename: str) -> str:
 
 
 def parse_import_queue(html: str) -> list[ImportQueueItem]:
-    """Parse queue task numbers and status labels from the shop view HTML."""
+    """Parse numbered import tasks and status labels from shop view HTML.
+
+    Args:
+        html: HTML document returned by the CMS shop view endpoint.
+
+    Returns:
+        Queue items for rows containing both a numeric task number and a status.
+        Rows with missing fields or malformed task numbers are skipped.
+    """
     soup = BeautifulSoup(html, "html.parser")
     tasks: list[ImportQueueItem] = []
 
@@ -74,13 +113,29 @@ def parse_import_queue(html: str) -> list[ImportQueueItem]:
 
 
 def latest_cron_num(html: str) -> int:
-    """Return the largest numeric queue task number, or zero for an empty list."""
+    """Return the highest numeric task number present in the queue HTML.
+
+    Args:
+        html: HTML document returned by the CMS shop view endpoint.
+
+    Returns:
+        The largest parsed task number, or ``0`` when no valid tasks exist.
+    """
     tasks = parse_import_queue(html)
     return max((task.cron_num for task in tasks), default=0)
 
 
 def newest_task_after(html: str, baseline_cron_num: int) -> ImportQueueItem | None:
-    """Return the newest queue item created after the supplied baseline."""
+    """Find the highest-numbered task newer than a previously observed task.
+
+    Args:
+        html: HTML document returned by the CMS shop view endpoint.
+        baseline_cron_num: Task number observed before the new import was queued.
+
+    Returns:
+        The queue item with the greatest number above the baseline, or ``None``
+        if the HTML contains no newer valid task.
+    """
     tasks = [
         task for task in parse_import_queue(html) if task.cron_num > baseline_cron_num
     ]
@@ -90,7 +145,17 @@ def newest_task_after(html: str, baseline_cron_num: int) -> ImportQueueItem | No
 
 
 def ensure_import_succeeded(task: ImportQueueItem) -> None:
-    """Raise when a queue task reports a terminal failure status."""
+    """Raise an error if an import task reports a failure status.
+
+    Args:
+        task: Parsed queue item whose status should be checked.
+
+    Returns:
+        ``None`` when the task status does not indicate failure.
+
+    Raises:
+        ImportQueueError: If the status contains a recognized failure marker.
+    """
     lowered_status = task.status.casefold()
     if (
         "ошиб" in lowered_status
