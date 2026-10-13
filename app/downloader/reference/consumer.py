@@ -8,12 +8,12 @@ import gspread
 from app.downloader.reference.google_oauth import get_credentials
 from app.downloader.reference.config import (
     SCOPES,
+    configure_logging,
     extract_spreadsheet_id,
     load_settings,
 )
 from app.downloader.reference.producer import publish_reference_csv
 from app.downloader.reference.utils import serialize_data_to_csv
-from app.logging_config import configure_logging
 from app.messaging.kafka import publish_reply, run_consumer
 from app.messaging.topics import REFERENCE_DOWNLOAD_REQUESTS
 

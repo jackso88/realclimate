@@ -1,8 +1,11 @@
 """Initialize the persisted Google Sheets OAuth token without downloading CSV."""
 
 from app.downloader.reference.google_oauth import get_credentials
-from app.downloader.reference.config import SCOPES, load_settings
-from app.logging_config import configure_logging
+from app.downloader.reference.config import (
+    SCOPES,
+    configure_logging,
+    load_settings,
+)
 
 
 def main() -> None:

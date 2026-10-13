@@ -6,6 +6,7 @@ resolved against the directory that contains the ``.env`` file.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -118,4 +119,17 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         sheet_name=required("GOOGLE_SHEET_NAME"),
         credentials_file=_resolve_path(required("GOOGLE_CREDENTIALS_FILE"), base_dir),
         token_file=_resolve_path(required("GOOGLE_TOKEN_FILE"), base_dir),
+    )
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Configure this service's standard console log format.
+
+    Args:
+        level: Minimum severity to emit; defaults to ``logging.INFO``.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )

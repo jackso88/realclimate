@@ -4,7 +4,7 @@ import logging
 import os
 
 from app.admin_auth.producer import request_session
-from app.downloader.current.config import load_settings
+from app.downloader.current.config import configure_logging, load_settings
 from app.downloader.current.queue_processor import (
     download_latest_export_content,
     delete_archive_from_admin,
@@ -12,7 +12,6 @@ from app.downloader.current.queue_processor import (
     start_product_export,
 )
 from app.downloader.current.producer import publish_download, response_topic
-from app.logging_config import configure_logging
 from app.messaging.kafka import publish_reply, run_consumer
 from app.messaging.topics import (
     ADMIN_AUTH_CURRENT_RESPONSES,

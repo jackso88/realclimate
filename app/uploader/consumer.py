@@ -6,9 +6,8 @@ import os
 from app.admin_auth.producer import request_session
 from app.messaging.kafka import publish_reply, run_consumer
 from app.messaging.payloads import decode_bytes
-from app.logging_config import configure_logging
 from app.messaging.topics import ADMIN_AUTH_UPLOADER_RESPONSES, UPLOADER_REQUESTS
-from app.uploader.config import load_settings
+from app.uploader.config import configure_logging, load_settings
 from app.uploader.queue_processor import (
     delete_uploaded_file,
     get_latest_import_cron_num,

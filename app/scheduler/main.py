@@ -6,7 +6,7 @@ import os
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.logging_config import configure_logging
+from app.scheduler.config import configure_logging
 from app.messaging.health import HeartbeatReporter
 from app.messaging.kafka import KafkaBus
 from app.scheduler.producer import publish_core_run

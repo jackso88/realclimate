@@ -1,5 +1,6 @@
 """Configuration for the current catalogue downloader."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -62,3 +63,16 @@ def _required_integer(name: str) -> int:
         return int(os.environ[name])
     except ValueError as error:
         raise ConfigurationError(f"{name} must be an integer") from error
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Configure this service's standard console log format.
+
+    Args:
+        level: Minimum severity to emit; defaults to ``logging.INFO``.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )

@@ -6,7 +6,7 @@ import os
 from app.messaging.kafka import run_consumer
 from app.messaging.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
-from app.logging_config import configure_logging
+from app.notifications.config import configure_logging
 from app.notifications.telegram import send_telegram_message
 
 logger = logging.getLogger(__name__)

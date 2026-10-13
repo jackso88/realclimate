@@ -31,9 +31,9 @@ request.
 
 ## Logging
 
-Command line entry points configure a consistent INFO-level log format.
-The default level is INFO. Module level debug messages can be enabled by
-calling `configure_logging(logging.DEBUG)` from an entry point.
+Each service configures the same console log format from its own `config.py`.
+The default level is INFO; pass `logging.DEBUG` to that service's
+`configure_logging` function to enable debug output.
 
 ## Kafka deployment
 

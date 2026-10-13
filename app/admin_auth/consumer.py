@@ -4,9 +4,8 @@ import logging
 import os
 
 from app.admin_auth.auth import create_session_snapshot
-from app.admin_auth.config import load_settings
+from app.admin_auth.config import configure_logging, load_settings
 from app.admin_auth.session_cache import SessionSnapshotCache
-from app.logging_config import configure_logging
 from app.messaging.kafka import publish_reply, run_consumer
 from app.messaging.topics import ADMIN_AUTH_REQUESTS
 

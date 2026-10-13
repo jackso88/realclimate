@@ -5,8 +5,9 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from app.core.models import DuplicateMap
+from app.core.config import configure_logging
 from app.core.duplicate_mapping import DUPLICATE_CODE_MAP
+from app.core.models import DuplicateMap
 from app.core.pipeline import (
     decode_duplicate_map,
     encode_duplicate_map,
@@ -14,7 +15,6 @@ from app.core.pipeline import (
 )
 from app.downloader.current.producer import response_topic as current_response_topic
 from app.downloader.reference.producer import response_topic as reference_response_topic
-from app.logging_config import configure_logging
 from app.messaging.kafka import (
     KafkaBus,
     publish_failure,

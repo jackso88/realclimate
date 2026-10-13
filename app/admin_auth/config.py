@@ -1,5 +1,6 @@
 """Environment configuration for the admin authentication service."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -38,7 +39,8 @@ def load_settings(env_file: str | Path | None = None) -> AdminSettings:
     """Load and validate the settings required by admin authentication.
 
     ``ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS`` controls how long the service
-    reuses a serialized authenticated session; it defaults to 14400 seconds (4 hours).
+    reuses a serialized authenticated session; it defaults to 14400 seconds
+    (4 hours).
 
     Args:
         env_file: Optional path to an environment file. When omitted, the
@@ -90,4 +92,17 @@ def load_settings(env_file: str | Path | None = None) -> AdminSettings:
         form_name=os.getenv("TAPTOP_FORM_NAME", "login_form"),
         username_field=os.getenv("TAPTOP_USERNAME_FIELD", "email"),
         password_field=os.getenv("TAPTOP_PASSWORD_FIELD", "password"),
+    )
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Configure this service's standard console log format.
+
+    Args:
+        level: Minimum severity to emit; defaults to ``logging.INFO``.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )

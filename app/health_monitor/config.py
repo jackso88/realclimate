@@ -1,5 +1,6 @@
 """Environment-based configuration for the health monitor."""
 
+import logging
 import os
 
 from app.health_monitor.models import HealthMonitorSettings
@@ -74,4 +75,17 @@ def load_settings() -> HealthMonitorSettings:
         ),
         startup_grace_seconds=_positive_int("HEALTH_STARTUP_GRACE_SECONDS", 180),
         check_interval_seconds=_positive_int("HEALTH_CHECK_INTERVAL_SECONDS", 10),
+    )
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Configure this service's standard console log format.
+
+    Args:
+        level: Minimum severity to emit; defaults to ``logging.INFO``.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
