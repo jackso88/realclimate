@@ -1,4 +1,4 @@
-"""Weekday hourly daemon that triggers the catalogue pipeline."""
+"""Weekday hourly daemon that triggers the catalogue workflow."""
 
 import logging
 import os
@@ -9,7 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.scheduler.config import configure_logging
 from app.messaging.health import HeartbeatReporter
 from app.messaging.kafka import KafkaBus
-from app.scheduler.producer import publish_core_run
+from app.scheduler.producer import publish_workflow_run
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ def main() -> None:
     timezone = os.getenv("SCHEDULE_TIMEZONE", "Europe/Minsk")
     scheduler = BlockingScheduler(timezone=timezone)
     scheduler.add_job(
-        publish_core_run,
+        publish_workflow_run,
         CronTrigger(day_of_week="mon-fri", hour="9-17", minute=0, timezone=timezone),
         id="hourly-catalogue-run",
         max_instances=1,

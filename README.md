@@ -35,6 +35,21 @@ Each service configures the same console log format from its own `config.py`.
 The default level is INFO; pass `logging.DEBUG` to that service's
 `configure_logging` function to enable debug output.
 
+## Change-driven workflow
+
+The scheduler starts the workflow orchestrator. It downloads the reference
+spreadsheet first and compares its SHA-256 digest with the last successfully
+processed digest stored in the compacted Kafka topic
+`orchestrator.reference.fingerprint.state`. If the reference data is unchanged,
+current-catalogue download, core processing, and upload are skipped. When it
+changes, the orchestrator requests current data and sends both CSV payloads to
+core. Core only processes supplied data; it returns the processed CSV and
+change report as a `catalogue_processed` event on `core.process.results`. That
+same result is the request reply, so a future analytics consumer can subscribe
+with its own Kafka group without duplicating the large payload. The uploader runs only
+when the change report is non-empty. The reference digest is checkpointed after
+all required work succeeds, so a failed run can retry on the next schedule.
+
 ## Kafka deployment
 
 Copy `.env.example` to `.env`, fill in the CMS, Telegram, and Kafka security

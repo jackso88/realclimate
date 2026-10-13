@@ -1,109 +1,55 @@
-"""Kafka worker for the complete in-memory catalogue update."""
+"""Kafka worker that processes supplied catalogue data and returns results."""
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app.core.config import configure_logging
 from app.core.duplicate_mapping import DUPLICATE_CODE_MAP
-from app.core.models import DuplicateMap
 from app.core.pipeline import (
     decode_duplicate_map,
     encode_duplicate_map,
     process_catalogue,
 )
-from app.downloader.current.producer import response_topic as current_response_topic
-from app.downloader.reference.producer import response_topic as reference_response_topic
-from app.messaging.kafka import (
-    KafkaBus,
-    publish_failure,
-    publish_reply,
-    run_consumer,
-)
+from app.messaging.kafka import publish_failure, publish_reply, run_consumer
 from app.messaging.models import Envelope
-from app.messaging.payloads import decode_bytes
+from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
-    CORE_NOTIFICATIONS,
     CORE_DUPLICATE_MAP_STATE,
-    CORE_RUNS,
-    CORE_CURRENT_RESPONSES,
-    CORE_REFERENCE_RESPONSES,
-    CORE_UPLOADER_RESPONSES,
-    CURRENT_DOWNLOAD_REQUESTS,
-    REFERENCE_DOWNLOAD_REQUESTS,
+    CORE_NOTIFICATIONS,
+    CORE_PROCESS_REQUESTS,
+    CORE_PROCESS_RESULTS,
 )
-from app.uploader.producer import request_import
 
 logger = logging.getLogger(__name__)
-duplicate_map_cache: DuplicateMap | None = None
 
 
-def _download(bus: KafkaBus, topic: str, response_topic: str, group: str) -> bytes:
-    """Request a CSV download and decode its binary payload.
+def handle_process(message: Envelope, bus) -> None:
+    """Process caller-supplied source CSVs and publish the core result.
 
-    Args:
-        bus: Kafka client used to send the request and receive its reply.
-        topic: Request topic for the downloader service.
-        response_topic: Topic to which the downloader sends its reply.
-        group: Consumer group used while waiting for that reply.
-
-    Returns:
-        The uncompressed CSV contents.
-    """
-    response = bus.request(
-        topic,
-        response_topic,
-        "download_csv",
-        {},
-        timeout=float(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "900")),
-        response_group=group,
-    )
-    return decode_bytes(response.payload["csv_gzip_base64"])
-
-
-def handle_run(message: Envelope, bus: KafkaBus) -> None:
-    """Run one complete catalogue update requested through Kafka.
-
-    The current catalogue and reference spreadsheet are downloaded concurrently.
-    Their contents are processed in memory, the processed CSV is sent to the
-    uploader, and updated duplicate-map state is persisted to Kafka. Detailed
-    changes are published for notification when the run produces any.
+    The core no longer downloads inputs or invokes the uploader. It emits a
+    result event for downstream consumers, which provides an extension point
+    for an analytics service.
 
     Args:
-        message: Request envelope whose reply topic and correlation ID identify
-            where the run result must be published.
-        bus: Kafka bus used for downloader requests, state persistence,
-            notifications, uploader requests, and the final reply.
-
-    Returns:
-        ``None``. The result or failure is published to Kafka.
+        message: Request containing compressed reference and current CSVs.
+        bus: Kafka bus used to read and persist duplicate state and publish
+            result, notification, and response messages.
     """
-    global duplicate_map_cache
     try:
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            current_future = pool.submit(
-                _download,
-                bus,
-                CURRENT_DOWNLOAD_REQUESTS,
-                current_response_topic(),
-                CORE_CURRENT_RESPONSES,
-            )
-            reference_future = pool.submit(
-                _download,
-                bus,
-                REFERENCE_DOWNLOAD_REQUESTS,
-                reference_response_topic(),
-                CORE_REFERENCE_RESPONSES,
-            )
-            current_content = current_future.result()
-            reference_content = reference_future.result()
-
-        output = process_catalogue(
-            reference_content,
-            current_content,
-            duplicate_map_cache,
+        if message.command != "process_catalogue":
+            raise ValueError(f"Unsupported core command: {message.command}")
+        reference_csv = decode_bytes(message.payload["reference_csv_gzip_base64"])
+        current_csv = decode_bytes(message.payload["current_csv_gzip_base64"])
+        reference_sha256 = message.payload.get("reference_sha256")
+        latest_state = bus.read_latest(CORE_DUPLICATE_MAP_STATE)
+        duplicate_map = (
+            decode_duplicate_map(latest_state.payload)
+            if latest_state
+            else dict(DUPLICATE_CODE_MAP)
         )
+        output = process_catalogue(reference_csv, current_csv, duplicate_map)
+
         excluded_path = Path(
             os.getenv(
                 "EXCLUDED_CSV_PATH",
@@ -113,13 +59,6 @@ def handle_run(message: Envelope, bus: KafkaBus) -> None:
         excluded_path.parent.mkdir(parents=True, exist_ok=True)
         excluded_path.write_bytes(output.excluded_csv)
 
-        response = request_import(
-            bus,
-            CORE_UPLOADER_RESPONSES,
-            CORE_UPLOADER_RESPONSES,
-            output.processed_csv,
-            timeout=float(os.getenv("IMPORT_TIMEOUT_SECONDS", "1800")),
-        )
         bus.publish(
             CORE_DUPLICATE_MAP_STATE,
             Envelope.create(
@@ -128,45 +67,47 @@ def handle_run(message: Envelope, bus: KafkaBus) -> None:
             ),
             key="duplicate-map",
         )
-        duplicate_map_cache = output.updated_duplicate_map
-        if output.detailed_changes:
+        changes = output.detailed_changes
+        result_payload = {
+            "reference_sha256": reference_sha256,
+            "processed_csv_gzip_base64": encode_bytes(output.processed_csv),
+            "detailed_changes": changes,
+            "changes_count": len(changes),
+        }
+        bus.publish(
+            CORE_PROCESS_RESULTS,
+            Envelope.create(
+                "catalogue_processed",
+                result_payload,
+                correlation_id=message.correlation_id,
+            ),
+            key=message.correlation_id,
+        )
+        if changes:
             bus.publish(
                 CORE_NOTIFICATIONS,
                 Envelope.create(
                     "detailed_changes",
-                    {"changes": output.detailed_changes},
+                    {"changes": changes},
+                    correlation_id=message.correlation_id,
                 ),
             )
-        publish_reply(bus, message, {"import": response.payload})
-        logger.info(
-            "Catalogue run completed: %d detail lines", len(output.detailed_changes)
-        )
+
+        logger.info("Core processing completed: %d detailed changes", len(changes))
     except Exception as error:
-        logger.exception("Core catalogue run failed")
+        logger.exception("Core catalogue processing failed")
         publish_failure(bus, "core", error)
         publish_reply(bus, message, error=str(error))
 
 
 def main() -> None:
-    """Run the core Kafka consumer."""
+    """Run the core data-processing Kafka consumer."""
     configure_logging()
-    bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-    state_bus = KafkaBus(bootstrap_servers)
-    latest_state = state_bus.read_latest(CORE_DUPLICATE_MAP_STATE)
-    global duplicate_map_cache
-    duplicate_map_cache = (
-        decode_duplicate_map(latest_state.payload)
-        if latest_state
-        else dict(DUPLICATE_CODE_MAP)
-    )
-    logger.info(
-        "Loaded %d duplicate map entries from Kafka state", len(duplicate_map_cache)
-    )
     run_consumer(
-        bootstrap_servers,
-        CORE_RUNS,
+        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        CORE_PROCESS_REQUESTS,
         "core-service",
-        handle_run,
+        handle_process,
         service_name="core",
     )
 

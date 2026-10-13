@@ -156,7 +156,10 @@ class KafkaBus:
                 **self.client_configuration,
                 "group.id": response_group,
                 "enable.auto.commit": False,
-                "auto.offset.reset": "latest",
+                # Start at the earliest retained response on first use. This
+                # prevents a fast service reply from arriving before the
+                # consumer has established its initial latest offset.
+                "auto.offset.reset": "earliest",
                 "max.partition.fetch.bytes": 80_000_000,
                 "max.poll.interval.ms": 3_600_000,
             }
@@ -187,6 +190,14 @@ class KafkaBus:
                 response = Envelope.decode(kafka_message.value())
                 if response.correlation_id != correlation_id:
                     continue
+                # Persist consumed offsets so subsequent RPCs do not replay
+                # the retained response history from the beginning.
+                consumer.commit(asynchronous=False)
+                logger.info(
+                    "Received Kafka RPC response from %s for %s",
+                    response_topic,
+                    command,
+                )
                 if response.error:
                     raise RemoteServiceError(sanitize_error(response.error))
                 return response

@@ -81,14 +81,13 @@ services:
         EOF
         chmod 600 /tmp/kafka-client.properties
         create_topic() {
-          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-            --command-config /tmp/kafka-client.properties \
-            --create --if-not-exists --partitions 1 --replication-factor 1 "$@"
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --command-config /tmp/kafka-client.properties --create --if-not-exists --partitions 1 --replication-factor 1 "$@"
         }
-        create_topic --topic core.runs
-        create_topic --topic core.run.responses
-        create_topic --topic core-current-responses
-        create_topic --topic core-reference-responses
+        create_topic --topic orchestrator.runs
+        create_topic --topic orchestrator.run.responses
+        create_topic --topic orchestrator.uploader.responses
+        create_topic --topic core.process.requests
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --command-config /tmp/kafka-client.properties --create --if-not-exists --partitions 3 --replication-factor 1 --topic core.process.results
         create_topic --topic downloader.current.requests
         create_topic --topic downloader.current.responses
         create_topic --topic downloader.reference.requests
@@ -97,12 +96,15 @@ services:
         create_topic --topic admin_auth.current.responses
         create_topic --topic admin_auth.uploader.responses
         create_topic --topic uploader.requests
-        create_topic --topic core-uploader-responses
         create_topic --topic notifications
         create_topic --topic health.heartbeats
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --command-config /tmp/kafka-client.properties \
           --create --if-not-exists --topic core.duplicate-map.state \
+          --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --command-config /tmp/kafka-client.properties \
+          --create --if-not-exists --topic orchestrator.reference.fingerprint.state \
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
     volumes:
       - *kafka_ca_volume
@@ -178,15 +180,27 @@ services:
     environment:
       <<: *common_env
       EXCLUDED_CSV_PATH: /app/storage/outputs/for_zalivka_excluded.csv
-      DOWNLOAD_TIMEOUT_SECONDS: ${DOWNLOAD_TIMEOUT_SECONDS:-900}
-      IMPORT_TIMEOUT_SECONDS: ${IMPORT_TIMEOUT_SECONDS:-1800}
     volumes:
       - *kafka_ca_volume
       - ../../storage/outputs:/app/storage/outputs
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  orchestrator:
+    build: *app_build
+    command: ["python", "-m", "app.orchestrator.consumer"]
+    environment:
+      <<: *common_env
+      DOWNLOAD_TIMEOUT_SECONDS: ${DOWNLOAD_TIMEOUT_SECONDS:-900}
+      IMPORT_TIMEOUT_SECONDS: ${IMPORT_TIMEOUT_SECONDS:-1800}
+    volumes:
+      - *kafka_ca_volume
+    depends_on:
+      kafka_init: {condition: service_completed_successfully}
       downloader_current: {condition: service_started}
       downloader_reference: {condition: service_started}
+      core: {condition: service_started}
       uploader: {condition: service_started}
     restart: unless-stopped
 
@@ -211,10 +225,10 @@ services:
     environment:
       <<: *common_env
       SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-Europe/Minsk}
-      CORE_RUN_TIMEOUT_SECONDS: ${CORE_RUN_TIMEOUT_SECONDS:-3600}
+      ORCHESTRATOR_RUN_TIMEOUT_SECONDS: ${ORCHESTRATOR_RUN_TIMEOUT_SECONDS:-5400}
     depends_on:
       kafka_init: {condition: service_completed_successfully}
-      core: {condition: service_started}
+      orchestrator: {condition: service_started}
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume

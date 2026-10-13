@@ -19,5 +19,5 @@ def publish_reference_csv(bus: KafkaBus, request: Envelope, content: bytes) -> N
 
 
 def response_topic() -> str:
-    """Return the response topic consumed by core."""
+    """Return the response topic used by the orchestrator."""
     return REFERENCE_DOWNLOAD_RESPONSES

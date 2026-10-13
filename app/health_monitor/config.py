@@ -10,6 +10,7 @@ DEFAULT_MONITORED_SERVICES = (
     "downloader_current",
     "downloader_reference",
     "core",
+    "orchestrator",
     "uploader",
     "scheduler",
     "notifications",

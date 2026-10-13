@@ -29,5 +29,5 @@ def publish_download(
 
 
 def response_topic() -> str:
-    """Return the response topic consumed by core."""
+    """Return the response topic used by the orchestrator."""
     return CURRENT_DOWNLOAD_RESPONSES
