@@ -35,6 +35,7 @@ def main() -> None:
         ADMIN_AUTH_REQUESTS,
         "admin-auth-service",
         handle_request,
+        service_name="admin_auth",
     )
 
 

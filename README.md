@@ -47,9 +47,15 @@ docker compose --env-file .env -f deploy/docker/compose.yaml up --build
 Docker configuration is kept in `deploy/docker`. The Compose file uses the
 project root as its build context, so application files, `.env`, and mounted
 directories keep their existing locations. Compose passes only the variables
-each service needs; for example, Google and Telegram secrets are limited to
-their respective workers, and CMS login credentials are passed only to
-`admin_auth`.
+each service needs; Google credentials go only to `downloader_reference`, the
+Telegram token goes to `notifications` and `health_monitor`, and CMS login
+credentials are passed only to `admin_auth`.
+
+Long-running application containers and the Kafka broker use the
+`unless-stopped` restart policy. To start them automatically after a system
+reboot, enable the Docker daemon in the operating system (on systemd-based Linux:
+`sudo systemctl enable --now docker`). A container stopped explicitly remains
+stopped until started again.
 
 Kafka client traffic uses TLS with SASL/SCRAM-SHA-512 authentication. Compose
 generates a self-signed broker certificate on first startup and provisions the
@@ -65,6 +71,20 @@ change `KAFKA_TLS_STORE_PASSWORD` or need to regenerate the certificate, stop
 the stack and remove the `kafka_server_certs` and `kafka_client_certs` volumes
 before starting it again. Removing `kafka_data` also erases persisted Kafka
 state and is not needed for normal certificate rotation.
+
+### Service health monitoring
+
+The `health_monitor` container watches Kafka heartbeats from `admin_auth`, both
+downloaders, `core`, `uploader`, `scheduler`, and `notifications`. Workers send a
+heartbeat every 30 seconds. A service is reported unavailable after 120 seconds
+without a heartbeat; startup and Kafka reconnection have a 180-second grace
+period. These thresholds can be changed with `HEALTH_HEARTBEAT_TIMEOUT_SECONDS`,
+`HEALTH_STARTUP_GRACE_SECONDS`, and `HEALTH_CHECK_INTERVAL_SECONDS`.
+
+The monitor checks Kafka itself and sends outage and recovery messages directly
+through the Telegram Bot API, so Kafka failure does not block those alerts. If
+the health monitor process or the host loses internet access, it cannot send an
+alert about that failure; use external monitoring for host-level availability.
 
 The scheduler runs at the start of each hour from 09:00 through 17:00 Monday to
 Friday in `Europe/Minsk`. Core downloads both source CSVs concurrently, processes

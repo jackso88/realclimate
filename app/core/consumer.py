@@ -167,6 +167,7 @@ def main() -> None:
         CORE_RUNS,
         "core-service",
         handle_run,
+        service_name="core",
     )
 
 

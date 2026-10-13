@@ -52,6 +52,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 12
+    restart: unless-stopped
     volumes:
       - kafka_data:/var/lib/kafka/data
       - kafka_server_certs:/run/secrets/kafka-server:ro
@@ -97,6 +98,7 @@ services:
         create_topic --topic uploader.requests
         create_topic --topic core-uploader-responses
         create_topic --topic notifications
+        create_topic --topic health.heartbeats
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --command-config /tmp/kafka-client.properties \
           --create --if-not-exists --topic core.duplicate-map.state \
@@ -215,6 +217,22 @@ services:
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume
+
+  health_monitor:
+    build: *app_build
+    command: ["python", "-m", "app.health_monitor.main"]
+    environment:
+      <<: *common_env
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?Set TELEGRAM_CHAT_ID in .env}
+      HEALTH_HEARTBEAT_TIMEOUT_SECONDS: ${HEALTH_HEARTBEAT_TIMEOUT_SECONDS:-120}
+      HEALTH_STARTUP_GRACE_SECONDS: ${HEALTH_STARTUP_GRACE_SECONDS:-180}
+      HEALTH_CHECK_INTERVAL_SECONDS: ${HEALTH_CHECK_INTERVAL_SECONDS:-10}
+    volumes:
+      - *kafka_ca_volume
+    depends_on:
+      kafka_init: {condition: service_completed_successfully}
+    restart: unless-stopped
 
   notifications:
     build: *app_build

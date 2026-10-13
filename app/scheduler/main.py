@@ -7,6 +7,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.logging_config import configure_logging
+from app.messaging.health import HeartbeatReporter
+from app.messaging.kafka import KafkaBus
 from app.scheduler.producer import publish_core_run
 
 logger = logging.getLogger(__name__)
@@ -30,7 +32,13 @@ def main() -> None:
         misfire_grace_time=300,
     )
     logger.info("Scheduler active: weekdays 09:00–17:00 (%s)", timezone)
-    scheduler.start()
+    bus = KafkaBus(os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
+    heartbeat = HeartbeatReporter(bus, "scheduler")
+    heartbeat.start()
+    try:
+        scheduler.start()
+    finally:
+        heartbeat.stop()
 
 
 if __name__ == "__main__":

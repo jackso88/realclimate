@@ -58,6 +58,7 @@ def main() -> None:
         CURRENT_DOWNLOAD_REQUESTS,
         "current-downloader-service",
         handle_request,
+        service_name="downloader_current",
     )
 
 

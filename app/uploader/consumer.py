@@ -72,6 +72,7 @@ def main() -> None:
         UPLOADER_REQUESTS,
         "uploader-service",
         handle_request,
+        service_name="uploader",
     )
 
 

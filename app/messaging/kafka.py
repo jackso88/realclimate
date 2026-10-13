@@ -202,6 +202,8 @@ def run_consumer(
     topic: str,
     group_id: str,
     handler: Callable[[Envelope, KafkaBus], None],
+    *,
+    service_name: str | None = None,
 ) -> None:
     """Consume a topic continuously, dispatch records, and commit offsets.
 
@@ -211,6 +213,8 @@ def run_consumer(
         group_id: Consumer group identifier shared by this worker's instances.
         handler: Callback invoked with each decoded envelope and the producer
             bus used for replies.
+        service_name: Optional liveness name. When provided, this consumer
+            publishes a Kafka heartbeat every 30 seconds.
 
     This function runs until interrupted. Handler exceptions are logged and
     the corresponding record is still committed, so the worker does not retry
@@ -235,6 +239,12 @@ def run_consumer(
     )
     consumer.subscribe([topic])
     logger.info("Kafka consumer subscribed to %s", topic)
+    heartbeat_reporter = None
+    if service_name:
+        from app.messaging.health import HeartbeatReporter
+
+        heartbeat_reporter = HeartbeatReporter(bus, service_name)
+        heartbeat_reporter.start()
     try:
         while True:
             kafka_message = consumer.poll(1.0)
@@ -253,6 +263,8 @@ def run_consumer(
             finally:
                 consumer.commit(message=kafka_message, asynchronous=False)
     finally:
+        if heartbeat_reporter:
+            heartbeat_reporter.stop()
         consumer.close()
 
 

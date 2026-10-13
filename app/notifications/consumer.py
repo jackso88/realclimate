@@ -45,6 +45,7 @@ def main() -> None:
         CORE_NOTIFICATIONS,
         "telegram-notifications",
         handle_notification,
+        service_name="notifications",
     )
 
 

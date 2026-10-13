@@ -56,6 +56,7 @@ def main() -> None:
         REFERENCE_DOWNLOAD_REQUESTS,
         "reference-downloader-service",
         handle_request,
+        service_name="downloader_reference",
     )
 
 
