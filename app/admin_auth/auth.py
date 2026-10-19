@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from app.admin_auth.exceptions import AdminLoginError
 from app.admin_auth.models import AdminSettings, SessionSnapshot
+from app.messaging.rate_limit import rate_limit_session
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ def create_session_snapshot(
         AdminLoginError: If the login page has no usable redirect URL.
     """
     session = requests.Session()
+    rate_limit_session(session, settings.bootstrap_servers, "admin_auth", "cms:account")
     login_url = urljoin(settings.base_url + "/", settings.login_path.lstrip("/"))
     response = session.post(
         login_url,

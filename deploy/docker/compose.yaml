@@ -93,6 +93,8 @@ services:
         create_topic --topic admin-auth.uploader.responses
         create_topic --topic notifications
         create_topic --topic health.heartbeats
+        create_topic --topic rate.limit.requests --config retention.ms=3600000
+        create_topic --topic rate.limit.responses --config retention.ms=3600000
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --command-config /tmp/kafka-client.properties \
           --create --if-not-exists --topic core.duplicate-map.state \
@@ -135,6 +137,7 @@ services:
       - *kafka_ca_volume
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+      rate_limiter: {condition: service_started}
     restart: unless-stopped
 
   downloader_current:
@@ -149,6 +152,7 @@ services:
       - *kafka_ca_volume
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+      rate_limiter: {condition: service_started}
       admin_auth: {condition: service_started}
     restart: unless-stopped
 
@@ -168,6 +172,7 @@ services:
       - ../../app/downloader/reference/credentials:/app/app/downloader/reference/credentials
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+      rate_limiter: {condition: service_started}
     restart: unless-stopped
 
   core:
@@ -209,6 +214,22 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  rate_limiter:
+    build: *app_build
+    command: ["python", "-m", "app.rate_limiter.consumer"]
+    environment:
+      <<: *common_env
+      RATE_LIMITER_REDIS_URL: redis://redis:6379/0
+      RATE_LIMIT_CMS_MIN_INTERVAL_MS: ${RATE_LIMIT_CMS_MIN_INTERVAL_MS:-5500}
+      RATE_LIMIT_GOOGLE_SHEETS_MIN_INTERVAL_MS: ${RATE_LIMIT_GOOGLE_SHEETS_MIN_INTERVAL_MS:-1112}
+      RATE_LIMIT_TELEGRAM_CHAT_MIN_INTERVAL_MS: ${RATE_LIMIT_TELEGRAM_CHAT_MIN_INTERVAL_MS:-3334}
+    volumes:
+      - *kafka_ca_volume
+    depends_on:
+      kafka_init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
   uploader:
     build: *app_build
     command: ["python", "-m", "app.uploader.consumer"]
@@ -221,6 +242,7 @@ services:
       - *kafka_ca_volume
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+      rate_limiter: {condition: service_started}
       admin_auth: {condition: service_started}
     restart: unless-stopped
 
@@ -252,6 +274,7 @@ services:
       - *kafka_ca_volume
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+      rate_limiter: {condition: service_started}
     restart: unless-stopped
 
   notifications:
@@ -263,6 +286,7 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?Set TELEGRAM_CHAT_ID in .env}
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+      rate_limiter: {condition: service_started}
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume

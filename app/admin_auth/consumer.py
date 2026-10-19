@@ -8,6 +8,7 @@ from app.admin_auth.config import configure_logging, load_settings
 from app.admin_auth.models import AdminSettings
 from app.admin_auth.session_cache import SessionSnapshotCache
 from app.messaging.kafka import publish_reply, run_consumer
+from app.messaging.exceptions import RetryableMessageError
 from app.messaging.topics import ADMIN_AUTH_REQUESTS
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ def handle_request(message, bus, settings: AdminSettings | None = None) -> None:
         publish_reply(bus, message, snapshot.to_payload())
     except Exception as error:
         logger.exception("Admin authentication request failed")
+        if isinstance(error, RetryableMessageError):
+            raise
         publish_reply(bus, message, error=str(error))
 
 

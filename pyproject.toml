@@ -23,6 +23,7 @@ package-mode = false
 [tool.poetry.group.dev.dependencies]
 black = "^26.5.1"
 pytest = "^9.1.1"
+pytest-cov = "^7.1.0"
 
 [tool.black]
 line-length = 88
@@ -35,3 +36,11 @@ extend-exclude = '''
 testpaths = ["app"]
 python_files = ["test_*.py"]
 addopts = "-ra"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["*/tests/*", "*/test_*.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

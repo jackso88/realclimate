@@ -13,6 +13,12 @@ from app.uploader import consumer
 from app.uploader.exceptions import ImportQueueError
 
 
+@pytest.fixture(autouse=True)
+def bypass_rate_limit_setup(monkeypatch):
+    """Keep uploader handler tests independent of Kafka infrastructure."""
+    monkeypatch.setattr(consumer, "rate_limit_session", lambda session, *_: session)
+
+
 @pytest.fixture
 def steps(monkeypatch):
     """Mock every CMS step and the service failure publisher."""

@@ -16,6 +16,7 @@ from app.downloader.current.producer import publish_current_snapshot
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.retry import is_retryable_transport_error
+from app.messaging.rate_limit import rate_limit_session
 from app.messaging.topics import (
     ADMIN_AUTH_CURRENT_RESPONSES,
     REFERENCE_DOWNLOADS,
@@ -43,6 +44,12 @@ def handle_request(message, bus, settings: Settings | None = None) -> None:
             bus,
             ADMIN_AUTH_CURRENT_RESPONSES,
             "current-auth-rpc",
+        )
+        rate_limit_session(
+            session,
+            getattr(settings, "bootstrap_servers", "localhost:9092"),
+            "downloader_current",
+            "cms:account",
         )
         previous_cron_num = get_latest_export_cron_num(session, settings)
         start_product_export(session, settings)

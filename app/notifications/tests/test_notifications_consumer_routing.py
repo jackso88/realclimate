@@ -108,6 +108,7 @@ def test_a_first_run_report_listing_hundreds_of_articles_is_delivered_in_full(
     response.json.return_value = {"ok": True}
     post = Mock(return_value=response)
     monkeypatch.setattr(telegram.requests, "post", post)
+    monkeypatch.setattr(telegram, "acquire_rate_limit", lambda *_: None)
     monkeypatch.setattr(telegram, "time", SimpleNamespace(sleep=lambda seconds: None))
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
