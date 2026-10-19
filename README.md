@@ -61,8 +61,8 @@ evicted from its group, and could be started a second time. Keep
 ## Kafka deployment
 
 Copy `.env.example` to `.env`, fill in the CMS, Telegram, and Kafka security
-settings, and place the Google OAuth client secret at
-`config/google/client_secret.json`. Generate strong random values for
+settings, and place Google credentials in
+`app/downloader/reference/credentials/`. Generate strong random values for
 `KAFKA_SASL_PASSWORD` and `KAFKA_TLS_STORE_PASSWORD`; both values must contain
 only letters, digits, dots, underscores, and dashes. Then, from the project
 root, start the services and Kafka broker with:
@@ -139,13 +139,19 @@ process both inputs; the uploader imports the result only when core reports
 changes. Core persists only `storage/outputs/for_zalivka_excluded.csv`. Kafka
 retains queue messages for one hour and keeps the duplicate-code mapping in a
 compacted state topic across core container restarts.
-Google's OAuth token is kept under `config/google/token.json`, alongside the
-ignored client secret, and persists across container restarts. Before starting
-the headless workers, run `python -m app.downloader.reference.auth_cli` once on
-the host to authorize Google and create that token; this setup step does not
-download or write a catalogue CSV. OAuth requires interactive user
-authorization and the resulting token is secret material, so it is not
-generated while building a Docker image.
+Set `GOOGLE_AUTH_MODE=user` to keep using the existing OAuth flow. Its client
+secret and persisted refresh token are stored under
+`app/downloader/reference/credentials/`; run
+`python -m app.downloader.reference.auth_cli` on the host once to authorize.
+Set `GOOGLE_AUTH_MODE=service_account` to use
+`service_account_secret.json` from that same ignored directory instead. Share
+the spreadsheet with the service account's email address as a reader before
+switching modes. Service-account access tokens are refreshed automatically and
+do not require the interactive authorization step. If Google denies the
+service account access, the downloader retries with cached user OAuth
+credentials when both `GOOGLE_CREDENTIALS_FILE` and `GOOGLE_TOKEN_FILE` are
+available. Initialize the user token once with `GOOGLE_AUTH_MODE=user` and
+`python -m app.downloader.reference.auth_cli` before relying on that fallback.
 
 
 ### Kafka TLS integration check

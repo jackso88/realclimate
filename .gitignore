@@ -217,7 +217,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-/app/downloader/reference/credentials/
+/app/downloader/reference/credentials/*
+!/app/downloader/reference/credentials/.gitkeep
 /config/google/*
 !/config/google/.gitkeep
 /app/storage/

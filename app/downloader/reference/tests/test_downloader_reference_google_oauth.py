@@ -7,7 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.downloader.reference.google_oauth import get_credentials
+from app.downloader.reference.google_oauth import (
+    get_credentials,
+    get_service_account_credentials,
+)
 
 SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
 
@@ -121,3 +124,23 @@ class TestGetCredentials:
 
         assert result is mock_new_creds
         assert token_file.read_text(encoding="utf-8") == '{"token": "reauth"}'
+
+
+def test_loads_service_account_credentials_from_json(tmp_path: Path) -> None:
+    credentials_file = tmp_path / "service-account.json"
+    credentials_file.write_text("{}", encoding="utf-8")
+    credentials = MagicMock()
+
+    with patch(
+        "app.downloader.reference.google_oauth.ServiceAccountCredentials.from_service_account_file",
+        return_value=credentials,
+    ) as from_file:
+        result = get_service_account_credentials(credentials_file, SCOPES)
+
+    from_file.assert_called_once_with(str(credentials_file), scopes=SCOPES)
+    assert result is credentials
+
+
+def test_service_account_mode_rejects_missing_json_file(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="service-account file"):
+        get_service_account_credentials(tmp_path / "missing.json", SCOPES)

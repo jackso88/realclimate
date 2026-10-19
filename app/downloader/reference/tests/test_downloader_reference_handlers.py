@@ -1,7 +1,7 @@
 """Tests for the reference downloader's failure path, producer and entrypoints."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -66,6 +66,71 @@ def test_handler_reads_the_configured_worksheet_and_publishes_csv(sheet):
     published = sheet.publish.call_args.args
     assert published[:2] == (bus, request)
     assert "НС-1".encode("utf-8") in published[2]
+    sheet.reply.assert_not_called()
+
+
+def test_handler_uses_service_account_when_configured(sheet, monkeypatch):
+    service_account_settings = SimpleNamespace(
+        **{
+            **vars(SETTINGS),
+            "auth_mode": "service_account",
+            "service_account_file": "/credentials/service_account_secret.json",
+        }
+    )
+    service_credentials = Mock(return_value="service credentials")
+    monkeypatch.setattr(consumer, "load_settings", lambda: service_account_settings)
+    monkeypatch.setattr(
+        consumer, "get_service_account_credentials", service_credentials
+    )
+
+    consumer.handle_request(make_request(), object())
+
+    service_credentials.assert_called_once_with(
+        "/credentials/service_account_secret.json", SCOPES
+    )
+    sheet.credentials.assert_not_called()
+
+
+def test_service_account_permission_denial_retries_with_cached_user_oauth(
+    sheet, monkeypatch, tmp_path
+):
+    user_credentials_file = tmp_path / "client_secret.json"
+    user_credentials_file.write_text("{}", encoding="utf-8")
+    user_token_file = tmp_path / "token.json"
+    user_token_file.write_text("{}", encoding="utf-8")
+    service_account_settings = SimpleNamespace(
+        **{
+            **vars(SETTINGS),
+            "auth_mode": "service_account",
+            "service_account_file": tmp_path / "service_account_secret.json",
+            "credentials_file": user_credentials_file,
+            "token_file": user_token_file,
+        }
+    )
+    service_client = Mock()
+    service_client.open_by_key.side_effect = PermissionError
+    service_credentials = Mock(return_value="service credentials")
+    user_credentials = Mock(return_value="user credentials")
+    authorize = Mock(side_effect=[service_client, sheet.client])
+    monkeypatch.setattr(consumer, "load_settings", lambda: service_account_settings)
+    monkeypatch.setattr(
+        consumer, "get_service_account_credentials", service_credentials
+    )
+    monkeypatch.setattr(consumer, "get_credentials", user_credentials)
+    monkeypatch.setattr(consumer.gspread, "authorize", authorize)
+
+    request = make_request()
+    consumer.handle_request(request, object())
+
+    service_client.open_by_key.assert_called_once_with("SHEET123")
+    user_credentials.assert_called_once_with(
+        user_credentials_file, user_token_file, SCOPES
+    )
+    assert authorize.call_args_list == [
+        call(service_credentials.return_value),
+        call(user_credentials.return_value),
+    ]
+    assert sheet.publish.called
     sheet.reply.assert_not_called()
 
 
