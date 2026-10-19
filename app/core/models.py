@@ -29,9 +29,12 @@ class ProductRecord:
             statuses ("наличие уточняйте").
         retail_price: Retail price in BYN ("Розница"), already
             parsed to a float. Never ``None`` on a kept record,
-            because rows with a missing/zero price are excluded
-            before this dataclass is built.
-        dealer_price: Dealer price in BYN ("Дилер"), same guarantee
+            because rows with a missing price are excluded before
+            this dataclass is built. It can be ``0``: that is a
+            legitimate "not for sale" state, kept in the catalogue
+            and hidden in current.csv (``hidden = 1``) rather than
+            excluded.
+        dealer_price: Dealer price in BYN ("Дилер"), same guarantees
             as ``retail_price``.
         series: Product line ("Серия" column).
         brand: Brand name ("Бренд" column).
