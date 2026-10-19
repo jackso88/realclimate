@@ -5,12 +5,14 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call
 
 import pytest
+import requests
 
 from app.downloader.reference import auth_cli, consumer, producer
 from app.downloader.reference.config import SCOPES
 from app.downloader.reference.exceptions import ReferenceAuthenticationError
 from app.contracts.models import Envelope
 from app.messaging.payloads import decode_bytes
+from app.messaging.exceptions import RetryableMessageError
 from app.messaging.topics import (
     REFERENCE_DOWNLOADS,
     REFERENCE_PIPELINE_COMPLETED,
@@ -144,6 +146,16 @@ def test_google_failure_is_published_as_a_failure_event(sheet):
 
     sheet.failure.assert_called_once()
     assert str(sheet.failure.call_args.args[2]) == "quota exceeded"
+    sheet.publish.assert_not_called()
+
+
+def test_transient_google_timeout_is_reported_and_left_for_retry(sheet):
+    sheet.worksheet.get_all_values.side_effect = requests.Timeout("Google timed out")
+
+    with pytest.raises(RetryableMessageError, match="Transient failure"):
+        consumer.handle_request(make_request(), object())
+
+    sheet.failure.assert_called_once()
     sheet.publish.assert_not_called()
 
 

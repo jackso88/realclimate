@@ -4,11 +4,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+import requests
 
 from app.contracts.models import Envelope
 from app.downloader.current import consumer, producer
 from app.downloader.current.models import DownloadedCsv
-from app.messaging.payloads import decode_bytes, encode_bytes
+from app.messaging.payloads import decode_bytes
+from app.messaging.exceptions import RetryableMessageError
 from app.messaging.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
 
 
@@ -59,6 +61,16 @@ def test_download_failure_is_reported_and_stops_processing(steps):
     assert str(steps.failure.call_args.args[2]) == "export never finished"
     steps.publish.assert_not_called()
     steps.delete.assert_not_called()
+
+
+def test_transient_cms_network_failure_is_reported_and_left_for_retry(steps):
+    steps.download.side_effect = requests.ConnectionError("CMS unavailable")
+
+    with pytest.raises(RetryableMessageError, match="Transient failure"):
+        consumer.handle_request(make_request(), object())
+
+    steps.failure.assert_called_once()
+    steps.publish.assert_not_called()
 
 
 def test_a_failure_before_the_export_starts_is_also_reported(steps, monkeypatch):

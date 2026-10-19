@@ -5,8 +5,10 @@ from functools import partial
 
 from app.admin_auth.producer import request_session
 from app.contracts.models import Envelope
+from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.payloads import decode_bytes
+from app.messaging.retry import is_retryable_transport_error
 from app.messaging.topics import (
     ADMIN_AUTH_UPLOADER_RESPONSES,
     CORE_PROCESS_RESULTS,
@@ -36,6 +38,8 @@ def handle_processed_catalogue(
         bus: Kafka bus used for requesting an authenticated admin session.
         settings: Optional uploader settings injected once at worker startup.
     """
+    uploaded_file = None
+    file_deleted = False
     try:
         if message.command != "catalogue_processed":
             raise ValueError(f"Unsupported uploader command: {message.command}")
@@ -63,6 +67,7 @@ def handle_processed_catalogue(
             session, settings, baseline_cron_num
         )
         delete_uploaded_file(session, settings, uploaded_file)
+        file_deleted = True
         bus.publish(
             REFERENCE_PIPELINE_COMPLETED,
             Envelope.create(
@@ -82,7 +87,25 @@ def handle_processed_catalogue(
         logger.exception(
             "Uploader worker failed correlation_id=%s", message.correlation_id
         )
-        publish_failure(bus, "uploader", error, message.correlation_id)
+        if uploaded_file is not None and not file_deleted:
+            try:
+                delete_uploaded_file(session, settings, uploaded_file)
+            except Exception:
+                logger.exception(
+                    "Could not clean up uploaded CMS file_id=%s",
+                    uploaded_file.file_id,
+                )
+        try:
+            publish_failure(bus, "uploader", error, message.correlation_id)
+        except Exception as publish_error:
+            logger.exception("Could not publish uploader failure")
+            raise RetryableMessageError(
+                "Could not publish uploader failure notification"
+            ) from publish_error
+        if is_retryable_transport_error(error):
+            raise RetryableMessageError(
+                "Transient failure while importing the processed catalogue"
+            ) from error
 
 
 def main() -> None:

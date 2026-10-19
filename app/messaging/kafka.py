@@ -25,6 +25,7 @@ TELEGRAM_BOT_TOKEN = re.compile(r"(?i)\b(bot)\d+:[A-Za-z0-9_-]+")
 # group. A worker whose handler can run longer than this must raise it.
 DEFAULT_MAX_POLL_INTERVAL_MS = 3_600_000
 HANDLER_RETRY_BACKOFF_SECONDS = 1.0
+HANDLER_RETRY_MAX_BACKOFF_SECONDS = 60.0
 
 
 def sanitize_error(message: str) -> str:
@@ -89,7 +90,9 @@ class KafkaBus:
         self.producer.poll(0)
         remaining = self.producer.flush(10)
         if remaining:
-            raise RuntimeError(f"Kafka did not acknowledge message for {topic}")
+            raise RetryableMessageError(
+                f"Kafka did not acknowledge message for {topic}"
+            )
 
     def read_latest(self, topic: str, partition: int = 0) -> Envelope | None:
         """Read the newest record from a compacted Kafka state topic.
@@ -268,6 +271,7 @@ def run_consumer(
     consumer.subscribe(topics)
     logger.info("Kafka consumer subscribed to %s", ", ".join(topics))
     heartbeat_reporter = None
+    retry_attempts: dict[tuple[str, int, int], int] = {}
     if service_name:
         from app.messaging.health import HeartbeatReporter
 
@@ -291,24 +295,57 @@ def run_consumer(
                 handler(envelope, bus)
             except RetryableMessageError:
                 logger.exception("Unhandled message failure on topic(s) %s", topics)
+                record_key = (
+                    kafka_message.topic(),
+                    kafka_message.partition(),
+                    kafka_message.offset(),
+                )
+                attempt = retry_attempts.get(record_key, 0) + 1
+                retry_attempts[record_key] = attempt
                 consumer.seek(
                     TopicPartition(
-                        kafka_message.topic(),
-                        kafka_message.partition(),
-                        kafka_message.offset(),
+                        record_key[0],
+                        record_key[1],
+                        record_key[2],
                     )
                 )
-                sleep(HANDLER_RETRY_BACKOFF_SECONDS)
+                backoff = min(
+                    HANDLER_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)),
+                    HANDLER_RETRY_MAX_BACKOFF_SECONDS,
+                )
+                logger.warning(
+                    "Retrying Kafka record %s/%s/%s in %.1f seconds (attempt %s)",
+                    *record_key,
+                    backoff,
+                    attempt,
+                )
+                sleep(backoff)
             except Exception:
                 logger.exception("Unhandled message failure on topic(s) %s", topics)
                 if heartbeat_reporter:
                     heartbeat_reporter.mark_idle()
                     marked_idle = True
+                retry_attempts.pop(
+                    (
+                        kafka_message.topic(),
+                        kafka_message.partition(),
+                        kafka_message.offset(),
+                    ),
+                    None,
+                )
                 consumer.commit(message=kafka_message, asynchronous=False)
             else:
                 if heartbeat_reporter:
                     heartbeat_reporter.mark_idle()
                     marked_idle = True
+                retry_attempts.pop(
+                    (
+                        kafka_message.topic(),
+                        kafka_message.partition(),
+                        kafka_message.offset(),
+                    ),
+                    None,
+                )
                 consumer.commit(message=kafka_message, asynchronous=False)
             finally:
                 if heartbeat_reporter and not marked_idle:

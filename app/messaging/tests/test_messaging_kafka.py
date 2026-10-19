@@ -172,7 +172,7 @@ def test_publish_raises_when_broker_does_not_acknowledge(kafka_clients):
     producer, _ = kafka_clients
     producer.remaining = 1
 
-    with pytest.raises(RuntimeError, match="did not acknowledge"):
+    with pytest.raises(RetryableMessageError, match="did not acknowledge"):
         kafka.KafkaBus("broker:9093").publish("jobs", Envelope.create("run"))
 
 

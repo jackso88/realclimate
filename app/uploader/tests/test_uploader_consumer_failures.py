@@ -4,10 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+import requests
 
 from app.contracts.models import Envelope
 from app.messaging.payloads import encode_bytes
-from app.messaging.topics import CORE_PROCESS_RESULTS
+from app.messaging.exceptions import RetryableMessageError
 from app.uploader import consumer
 from app.uploader.exceptions import ImportQueueError
 
@@ -15,12 +16,18 @@ from app.uploader.exceptions import ImportQueueError
 @pytest.fixture
 def steps(monkeypatch):
     """Mock every CMS step and the service failure publisher."""
-    parts = SimpleNamespace(failure=Mock(), delete=Mock(), upload=Mock(), wait=Mock())
+    parts = SimpleNamespace(
+        failure=Mock(),
+        delete=Mock(),
+        upload=Mock(),
+        wait=Mock(),
+        start_import=Mock(),
+    )
     monkeypatch.setattr(consumer, "load_settings", lambda: "settings")
     monkeypatch.setattr(consumer, "request_session", Mock(return_value="session"))
     monkeypatch.setattr(consumer, "upload_processed_content", parts.upload)
     monkeypatch.setattr(consumer, "get_latest_import_cron_num", Mock(return_value=1))
-    monkeypatch.setattr(consumer, "start_product_import", Mock())
+    monkeypatch.setattr(consumer, "start_product_import", parts.start_import)
     monkeypatch.setattr(consumer, "wait_for_import_completion", parts.wait)
     monkeypatch.setattr(consumer, "delete_uploaded_file", parts.delete)
     monkeypatch.setattr(consumer, "publish_failure", parts.failure)
@@ -43,7 +50,7 @@ def test_failed_import_is_reported_as_a_service_failure(steps):
     assert steps.failure.call_args.args[1] == "uploader"
     assert str(steps.failure.call_args.args[2]) == "Import task #9 failed"
     assert steps.failure.call_args.args[3] == "pipeline-1"
-    steps.delete.assert_not_called()
+    steps.delete.assert_called_once()
 
 
 def test_failed_upload_stops_before_import_and_notifies(steps):
@@ -54,6 +61,18 @@ def test_failed_upload_stops_before_import_and_notifies(steps):
 
     assert str(steps.failure.call_args.args[2]) == "CMS unreachable"
     steps.wait.assert_not_called()
+
+
+def test_transient_cms_error_is_reported_and_left_for_retry(steps):
+    uploaded_file = type("File", (), {"file_id": "opaque-id"})()
+    steps.upload.return_value = uploaded_file
+    steps.start_import.side_effect = requests.Timeout("CMS timed out")
+
+    with pytest.raises(RetryableMessageError, match="Transient failure"):
+        consumer.handle_processed_catalogue(make_result(), object())
+
+    steps.delete.assert_called_once_with("session", "settings", uploaded_file)
+    steps.failure.assert_called_once()
 
 
 def test_missing_processed_payload_is_reported(steps):

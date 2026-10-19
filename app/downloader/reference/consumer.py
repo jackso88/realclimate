@@ -22,7 +22,9 @@ from app.downloader.reference.producer import (
     publish_reference_if_changed,
 )
 from app.downloader.reference.utils import serialize_data_to_csv
+from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
+from app.messaging.retry import is_retryable_transport_error
 from app.messaging.topics import (
     REFERENCE_PIPELINE_COMPLETED,
     REFERENCE_SYNC_REQUESTS,
@@ -108,7 +110,17 @@ def handle_request(message, bus, settings: Settings | None = None) -> None:
             logger.info("Reference sheet is unchanged; downstream work skipped")
     except Exception as error:
         logger.exception("Reference spreadsheet download failed")
-        publish_failure(bus, "downloader_reference", error, message.correlation_id)
+        try:
+            publish_failure(bus, "downloader_reference", error, message.correlation_id)
+        except Exception as publish_error:
+            logger.exception("Could not publish reference downloader failure")
+            raise RetryableMessageError(
+                "Could not publish reference downloader failure notification"
+            ) from publish_error
+        if is_retryable_transport_error(error):
+            raise RetryableMessageError(
+                "Transient failure while downloading the reference spreadsheet"
+            ) from error
 
 
 def main() -> None:

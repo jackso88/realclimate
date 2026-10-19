@@ -13,7 +13,9 @@ from app.downloader.current.queue_processor import (
     start_product_export,
 )
 from app.downloader.current.producer import publish_current_snapshot
+from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
+from app.messaging.retry import is_retryable_transport_error
 from app.messaging.topics import (
     ADMIN_AUTH_CURRENT_RESPONSES,
     REFERENCE_DOWNLOADS,
@@ -53,7 +55,17 @@ def handle_request(message, bus, settings: Settings | None = None) -> None:
         publish_current_snapshot(bus, message, downloaded)
     except Exception as error:
         logger.exception("Current catalogue download failed")
-        publish_failure(bus, "downloader_current", error, message.correlation_id)
+        try:
+            publish_failure(bus, "downloader_current", error, message.correlation_id)
+        except Exception as publish_error:
+            logger.exception("Could not publish current downloader failure")
+            raise RetryableMessageError(
+                "Could not publish current downloader failure notification"
+            ) from publish_error
+        if is_retryable_transport_error(error):
+            raise RetryableMessageError(
+                "Transient failure while downloading the current catalogue"
+            ) from error
 
 
 def main() -> None:

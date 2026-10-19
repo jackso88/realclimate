@@ -394,6 +394,23 @@ def test_worker_is_marked_idle_even_when_the_handler_fails(monkeypatch, fake_kaf
     assert fake_kafka.consumer.seeks == [("jobs", 0, 4)]
 
 
+def test_retry_backoff_grows_exponentially(monkeypatch, fake_kafka):
+    record = FakeMessage(Envelope.create("ping").encode())
+    fake_kafka.consumer = ScriptedConsumer([record] * 5, fake_kafka.events)
+    delays = []
+    monkeypatch.setattr(kafka, "sleep", delays.append)
+
+    def failing_handler(envelope, bus):
+        raise RetryableMessageError("temporary failure")
+
+    with pytest.raises(StopLoop):
+        kafka.run_consumer("kafka:9092", "jobs", "group", failing_handler)
+
+    assert delays == [1, 2, 4, 8, 16]
+    assert len(fake_kafka.consumer.seeks) == 5
+    assert fake_kafka.consumer.commits == []
+
+
 def test_unnamed_workers_run_without_any_busy_tracking(fake_kafka):
     record = FakeMessage(Envelope.create("ping").encode())
     fake_kafka.consumer = ScriptedConsumer([record], fake_kafka.events)
