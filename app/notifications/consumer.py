@@ -4,7 +4,7 @@ import logging
 from functools import partial
 
 from app.messaging.kafka import run_consumer
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
 from app.notifications.config import configure_logging, load_settings
 from app.notifications.models import NotificationSettings
@@ -28,9 +28,15 @@ def handle_notification(
     """
     if message.command == "failure":
         payload = message.payload
+        correlation = (
+            f" [correlation_id={message.correlation_id}]"
+            if message.correlation_id
+            else ""
+        )
         text = (
             f"Ошибка сервиса {payload.get('service', 'unknown')} "
             f"({payload.get('error_type', 'Error')}): {payload.get('error', '')}"
+            f"{correlation}"
         )
     elif message.command == "detailed_changes":
         changes = message.payload.get("changes") or []

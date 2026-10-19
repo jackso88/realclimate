@@ -4,7 +4,7 @@ import logging
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
 from app.notifications import consumer, telegram
 from app.notifications.consumer import handle_notification
@@ -24,6 +24,21 @@ def test_failure_text_falls_back_to_defaults_for_missing_fields(send):
     handle_notification(Envelope.create("failure", {}), None)
 
     send.assert_called_once_with("Ошибка сервиса unknown (Error): ")
+
+
+@patch("app.notifications.consumer.send_telegram_message")
+def test_failure_text_includes_pipeline_correlation_id(send):
+    message = Envelope.create(
+        "failure",
+        {"service": "core", "error_type": "ValueError", "error": "bad input"},
+        correlation_id="pipeline-123",
+    )
+
+    handle_notification(message, None)
+
+    send.assert_called_once_with(
+        "Ошибка сервиса core (ValueError): bad input [correlation_id=pipeline-123]"
+    )
 
 
 @patch("app.notifications.consumer.send_telegram_message")

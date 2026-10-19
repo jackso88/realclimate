@@ -6,6 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
+from pydantic import BaseModel, ConfigDict, Field
+
 # Type of the persistent duplicate-code mapping. The key uniquely (and
 # stably) identifies one physical duplicate row:
 #   (original_нс-код, model, occurrence_of_this_code_model_pair)
@@ -244,9 +246,14 @@ class CoreSettings(BaseModel):
     Args:
         bootstrap_servers: Kafka broker addresses.
         excluded_csv_path: Path where the manual-review CSV is persisted.
+        pending_redis_url: Redis connection URL for incomplete CSV pairs.
+        pending_input_ttl_seconds: Expiration for pairs missing one downloader.
+        processing_claim_ttl_seconds: Recovery lease for an interrupted core run.
     """
 
-    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+    model_config = ConfigDict(
+        extra="ignore", str_strip_whitespace=True, populate_by_name=True
+    )
 
     bootstrap_servers: str = Field(
         default="localhost:9092",
@@ -256,4 +263,19 @@ class CoreSettings(BaseModel):
     excluded_csv_path: Path = Field(
         default=Path("/app/storage/outputs/for_zalivka_excluded.csv"),
         validation_alias="EXCLUDED_CSV_PATH",
+    )
+    pending_redis_url: str = Field(
+        default="redis://redis:6379/0",
+        validation_alias="CORE_PENDING_REDIS_URL",
+        min_length=1,
+    )
+    pending_input_ttl_seconds: int = Field(
+        default=86_400,
+        validation_alias="CORE_PENDING_INPUT_TTL_SECONDS",
+        ge=1,
+    )
+    processing_claim_ttl_seconds: int = Field(
+        default=7_200,
+        validation_alias="CORE_PROCESSING_CLAIM_TTL_SECONDS",
+        ge=1,
     )

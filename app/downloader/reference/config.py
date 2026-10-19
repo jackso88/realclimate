@@ -10,7 +10,6 @@ import logging
 import os
 import re
 from pathlib import Path
-
 from dotenv import load_dotenv
 from pydantic import ValidationError
 

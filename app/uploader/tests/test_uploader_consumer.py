@@ -1,14 +1,15 @@
-"""Tests for the uploader request/reply contract."""
+"""Tests for uploader subscription to core result events."""
 
 from unittest.mock import Mock
 
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.payloads import encode_bytes
+from app.messaging.topics import CORE_PROCESS_RESULTS, REFERENCE_PIPELINE_COMPLETED
 from app.uploader import consumer
 from app.uploader.models import ImportQueueItem, UploadedFile
 
 
-def test_uploader_imports_supplied_processed_csv(monkeypatch):
+def test_uploader_imports_processed_csv_and_preserves_pipeline_id(monkeypatch):
     settings = object()
     session = object()
     uploaded = UploadedFile(file_id="fake-file-id", filename="processed.csv")
@@ -22,23 +23,61 @@ def test_uploader_imports_supplied_processed_csv(monkeypatch):
     monkeypatch.setattr(consumer, "start_product_import", Mock())
     wait = Mock(return_value=completed)
     monkeypatch.setattr(consumer, "wait_for_import_completion", wait)
-    monkeypatch.setattr(consumer, "delete_uploaded_file", Mock())
-    publish = Mock()
-    monkeypatch.setattr(consumer, "publish_reply", publish)
-    monkeypatch.setattr(consumer, "decode_bytes", lambda _: content)
-    request = Envelope.create(
-        "import_processed_csv",
-        {"csv_gzip_base64": encode_bytes(content), "filename": "processed.csv"},
-        reply_to="response",
+    delete = Mock()
+    monkeypatch.setattr(consumer, "delete_uploaded_file", delete)
+    failure = Mock()
+    monkeypatch.setattr(consumer, "publish_failure", failure)
+    message = Envelope.create(
+        "catalogue_processed",
+        {
+            "reference_sha256": "fake-digest",
+            "detailed_changes": ["price changed"],
+            "processed_csv_gzip_base64": encode_bytes(content),
+        },
+        correlation_id="pipeline-42",
     )
-    bus = object()
+    bus = Mock()
 
-    consumer.handle_request(request, bus)
+    consumer.handle_processed_catalogue(message, bus)
 
     upload.assert_called_once_with(session, settings, content, "processed.csv")
     consumer.start_product_import.assert_called_once_with(session, settings, uploaded)
     wait.assert_called_once_with(session, settings, 41)
-    consumer.delete_uploaded_file.assert_called_once_with(session, settings, uploaded)
-    publish.assert_called_once_with(
-        bus, request, {"cron_num": 42, "file_id": "fake-file-id"}
+    delete.assert_called_once_with(session, settings, uploaded)
+    bus.publish.assert_called_once()
+    topic, completion = bus.publish.call_args.args
+    assert topic == REFERENCE_PIPELINE_COMPLETED
+    assert completion.payload == {"reference_sha256": "fake-digest"}
+    assert completion.correlation_id == "pipeline-42"
+    failure.assert_not_called()
+
+
+def test_no_detailed_changes_skip_admin_auth_and_upload(monkeypatch):
+    session = Mock()
+    monkeypatch.setattr(consumer, "request_session", session)
+    upload = Mock()
+    monkeypatch.setattr(consumer, "upload_processed_content", upload)
+    message = Envelope.create(
+        "catalogue_processed", {"detailed_changes": []}, correlation_id="unchanged"
     )
+
+    consumer.handle_processed_catalogue(message, object())
+
+    session.assert_not_called()
+    upload.assert_not_called()
+
+
+def test_worker_subscribes_to_core_result_events(monkeypatch):
+    run_consumer = Mock()
+    settings = type("Settings", (), {"bootstrap_servers": "broker:9092"})()
+    monkeypatch.setattr(consumer, "configure_logging", Mock())
+    monkeypatch.setattr(consumer, "run_consumer", run_consumer)
+    monkeypatch.setattr(consumer, "load_settings", lambda: settings)
+
+    consumer.main()
+
+    args, kwargs = run_consumer.call_args
+    assert args[:3] == ("broker:9092", CORE_PROCESS_RESULTS, "uploader-service")
+    assert args[3].func is consumer.handle_processed_catalogue
+    assert args[3].keywords == {"settings": settings}
+    assert kwargs == {"service_name": "uploader"}

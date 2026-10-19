@@ -6,7 +6,8 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from app.messaging import kafka
-from app.messaging.models import Envelope
+from app.messaging.exceptions import RetryableMessageError
+from app.contracts.models import Envelope
 
 
 class StopLoop(Exception):
@@ -40,6 +41,15 @@ class FakeMessage:
     def error(self):
         return self._error
 
+    def topic(self):
+        return "jobs"
+
+    def partition(self):
+        return 0
+
+    def offset(self):
+        return 4
+
 
 class RecordingProducer:
     """Remember produced records and acknowledge every flush."""
@@ -72,6 +82,7 @@ class ScriptedConsumer:
         self.assignment_after = assignment_after
         self.polls = 0
         self.commits = []
+        self.seeks = []
         self.subscriptions = []
         self.closed = False
 
@@ -95,6 +106,9 @@ class ScriptedConsumer:
 
     def commit(self, **kwargs):
         self.commits.append(kwargs)
+
+    def seek(self, partition):
+        self.seeks.append(partition)
 
     def close(self):
         self.closed = True
@@ -364,9 +378,10 @@ def test_worker_is_marked_idle_even_when_the_handler_fails(monkeypatch, fake_kaf
     install_recording_reporter(monkeypatch, events)
     record = FakeMessage(Envelope.create("ping").encode())
     fake_kafka.consumer = ScriptedConsumer([record], events)
+    monkeypatch.setattr(kafka, "sleep", lambda _seconds: None)
 
     def failing_handler(envelope, bus):
-        raise ValueError("handler crashed")
+        raise RetryableMessageError("redis unavailable")
 
     with pytest.raises(StopLoop):
         kafka.run_consumer(
@@ -375,7 +390,25 @@ def test_worker_is_marked_idle_even_when_the_handler_fails(monkeypatch, fake_kaf
 
     interesting = [event for event in events if event != "poll"]
     assert interesting == ["busy", "idle"]
-    assert len(fake_kafka.consumer.commits) == 1
+    assert fake_kafka.consumer.commits == []
+    assert fake_kafka.consumer.seeks == [("jobs", 0, 4)]
+
+
+def test_retry_backoff_grows_exponentially(monkeypatch, fake_kafka):
+    record = FakeMessage(Envelope.create("ping").encode())
+    fake_kafka.consumer = ScriptedConsumer([record] * 5, fake_kafka.events)
+    delays = []
+    monkeypatch.setattr(kafka, "sleep", delays.append)
+
+    def failing_handler(envelope, bus):
+        raise RetryableMessageError("temporary failure")
+
+    with pytest.raises(StopLoop):
+        kafka.run_consumer("kafka:9092", "jobs", "group", failing_handler)
+
+    assert delays == [1, 2, 4, 8, 16]
+    assert len(fake_kafka.consumer.seeks) == 5
+    assert fake_kafka.consumer.commits == []
 
 
 def test_unnamed_workers_run_without_any_busy_tracking(fake_kafka):

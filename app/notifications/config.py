@@ -2,7 +2,6 @@
 
 import logging
 import os
-
 from app.notifications.models import NotificationSettings
 
 

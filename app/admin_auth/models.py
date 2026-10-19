@@ -5,6 +5,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import requests
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
 from pydantic import (
     BaseModel,
     ConfigDict,

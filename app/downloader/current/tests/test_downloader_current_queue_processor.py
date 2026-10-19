@@ -6,8 +6,8 @@ from zipfile import ZipFile
 
 import pytest
 
-from app.downloader.current.exceptions import ExportArchiveError, ExportNotReadyError
 from app.downloader.current.models import Settings
+from app.downloader.current.exceptions import ExportArchiveError, ExportNotReadyError
 from app.downloader.current.queue_processor import (
     delete_archive_from_admin,
     download_latest_export_content,

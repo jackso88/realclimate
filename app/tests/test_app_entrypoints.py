@@ -16,11 +16,10 @@ import pytest
 from app.messaging.topics import (
     ADMIN_AUTH_REQUESTS,
     CORE_NOTIFICATIONS,
-    CORE_PROCESS_REQUESTS,
-    CURRENT_DOWNLOAD_REQUESTS,
-    ORCHESTRATOR_RUNS,
-    REFERENCE_DOWNLOAD_REQUESTS,
-    UPLOADER_REQUESTS,
+    CURRENT_DOWNLOADS,
+    CORE_PROCESS_RESULTS,
+    REFERENCE_DOWNLOADS,
+    REFERENCE_SYNC_REQUESTS,
 )
 
 CONSUMER_ENTRYPOINTS = [
@@ -32,24 +31,23 @@ CONSUMER_ENTRYPOINTS = [
     ),
     (
         "app.downloader.current.consumer",
-        CURRENT_DOWNLOAD_REQUESTS,
+        REFERENCE_DOWNLOADS,
         "current-downloader-service",
         "downloader_current",
     ),
     (
         "app.downloader.reference.consumer",
-        REFERENCE_DOWNLOAD_REQUESTS,
+        [REFERENCE_SYNC_REQUESTS, "reference.pipeline.completed"],
         "reference-downloader-service",
         "downloader_reference",
     ),
-    ("app.core.consumer", CORE_PROCESS_REQUESTS, "core-service", "core"),
     (
-        "app.orchestrator.consumer",
-        ORCHESTRATOR_RUNS,
-        "orchestrator-service",
-        "orchestrator",
+        "app.core.consumer",
+        [REFERENCE_DOWNLOADS, CURRENT_DOWNLOADS],
+        "core-service",
+        "core",
     ),
-    ("app.uploader.consumer", UPLOADER_REQUESTS, "uploader-service", "uploader"),
+    ("app.uploader.consumer", CORE_PROCESS_RESULTS, "uploader-service", "uploader"),
     (
         "app.notifications.consumer",
         CORE_NOTIFICATIONS,

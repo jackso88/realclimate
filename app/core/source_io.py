@@ -5,8 +5,8 @@ from __future__ import annotations
 import csv
 import io
 
-from app.core.exceptions import SourceDataError
 from app.core.models import ExcludedRecord
+from app.core.exceptions import SourceDataError
 
 
 def parse_source_csv(content: bytes) -> list[tuple]:

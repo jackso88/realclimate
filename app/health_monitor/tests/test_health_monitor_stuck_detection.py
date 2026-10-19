@@ -8,7 +8,7 @@ from app.health_monitor.monitor import (
     _format_duration,
     _transition_text,
 )
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 
 NOW_EPOCH = 1_700_000_000.0
 

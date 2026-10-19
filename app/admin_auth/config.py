@@ -7,8 +7,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
+from app.admin_auth.models import AdminEnvironment
+
 from app.admin_auth.exceptions import AdminLoginError
-from app.admin_auth.models import AdminEnvironment, AdminSettings
+from app.admin_auth.models import AdminSettings
 
 
 def load_settings(env_file: str | Path | None = None) -> AdminSettings:

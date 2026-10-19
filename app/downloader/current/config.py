@@ -7,8 +7,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
-from app.downloader.current.exceptions import ConfigurationError
 from app.downloader.current.models import CurrentDownloaderConfig, Settings
+
+from app.downloader.current.exceptions import ConfigurationError
+from app.downloader.current.models import Settings
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:

@@ -9,12 +9,12 @@ import pytest
 import requests
 
 from app.downloader.current import queue_processor
+from app.downloader.current.models import Settings
 from app.downloader.current.exceptions import (
     AdminFileNotFoundError,
     ExportArchiveError,
     ExportNotReadyError,
 )
-from app.downloader.current.models import Settings
 from app.downloader.current.queue_processor import (
     EXTRA_FIELDS,
     delete_archive_from_admin,

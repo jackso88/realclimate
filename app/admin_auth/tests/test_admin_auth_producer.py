@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 from app.admin_auth.producer import request_session
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.topics import ADMIN_AUTH_REQUESTS
 
 

@@ -1,1 +1,1 @@
-"""Scheduled orchestration services."""
+"""Scheduled event publishers and daemon configuration."""

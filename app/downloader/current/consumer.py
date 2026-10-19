@@ -6,28 +6,37 @@ from functools import partial
 from app.admin_auth.producer import request_session
 from app.downloader.current.config import configure_logging, load_settings
 from app.downloader.current.models import Settings
-from app.downloader.current.producer import publish_download
 from app.downloader.current.queue_processor import (
-    delete_archive_from_admin,
     download_latest_export_content,
+    delete_archive_from_admin,
     get_latest_export_cron_num,
     start_product_export,
 )
-from app.messaging.kafka import publish_reply, run_consumer
-from app.messaging.topics import ADMIN_AUTH_CURRENT_RESPONSES, CURRENT_DOWNLOAD_REQUESTS
+from app.downloader.current.producer import publish_current_snapshot
+from app.messaging.exceptions import RetryableMessageError
+from app.messaging.kafka import publish_failure, run_consumer
+from app.messaging.retry import is_retryable_transport_error
+from app.messaging.topics import (
+    ADMIN_AUTH_CURRENT_RESPONSES,
+    REFERENCE_DOWNLOADS,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def handle_request(message, bus, settings: Settings | None = None) -> None:
-    """Export the latest CSV from the CMS and reply to the Kafka request.
+    """Download current catalogue data after a reference change event.
 
     Args:
-        message: Request envelope containing the correlation and reply data.
-        bus: Kafka bus used for auth requests and the final response.
+        message: Reference change event containing source CSV bytes and ID.
+        bus: Kafka bus used for auth requests and publication of current data.
         settings: Optional downloader settings injected once at worker startup.
     """
     try:
+        if message.command != "reference_downloaded":
+            raise ValueError(
+                f"Unsupported current downloader command: {message.command}"
+            )
         if settings is None:
             settings = load_settings()
         session = request_session(
@@ -43,10 +52,20 @@ def handle_request(message, bus, settings: Settings | None = None) -> None:
             after_cron_num=previous_cron_num,
         )
         delete_archive_from_admin(session, settings, downloaded.archive_filename)
-        publish_download(bus, message, downloaded)
+        publish_current_snapshot(bus, message, downloaded)
     except Exception as error:
         logger.exception("Current catalogue download failed")
-        publish_reply(bus, message, error=str(error))
+        try:
+            publish_failure(bus, "downloader_current", error, message.correlation_id)
+        except Exception as publish_error:
+            logger.exception("Could not publish current downloader failure")
+            raise RetryableMessageError(
+                "Could not publish current downloader failure notification"
+            ) from publish_error
+        if is_retryable_transport_error(error):
+            raise RetryableMessageError(
+                "Transient failure while downloading the current catalogue"
+            ) from error
 
 
 def main() -> None:
@@ -55,7 +74,7 @@ def main() -> None:
     settings = load_settings()
     run_consumer(
         settings.bootstrap_servers,
-        CURRENT_DOWNLOAD_REQUESTS,
+        REFERENCE_DOWNLOADS,
         "current-downloader-service",
         partial(handle_request, settings=settings),
         service_name="downloader_current",

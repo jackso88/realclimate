@@ -12,7 +12,7 @@ import pytest
 
 from app.health_monitor import monitor
 from app.health_monitor.models import HealthMonitorSettings
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.topics import HEALTH_HEARTBEATS
 
 START = 1000.0

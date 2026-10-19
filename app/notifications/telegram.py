@@ -6,8 +6,8 @@ import requests
 
 from app.messaging.kafka import sanitize_error
 from app.notifications.config import load_settings
-from app.notifications.exceptions import TelegramDeliveryError
 from app.notifications.models import NotificationSettings
+from app.notifications.exceptions import TelegramDeliveryError
 
 
 def _split_long_line(line: str, limit: int) -> list[str]:

@@ -14,8 +14,10 @@ import pytest
 
 from app.health_monitor.models import HealthMonitorEnvironment
 from app.messaging import topics
-from app.orchestrator.consumer import max_poll_interval_ms
-from app.orchestrator.models import OrchestratorSettings
+from app.downloader.current import consumer as current_consumer
+from app.downloader.reference import consumer as reference_consumer
+from app.core import consumer as core_consumer
+from app.uploader import consumer as uploader_consumer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_DIR = REPO_ROOT / "app"
@@ -122,7 +124,7 @@ def test_the_shared_messaging_layer_does_not_depend_on_any_service():
             continue
         for module in imported_modules(path):
             owner = service_of(module) if module.startswith("app.") else None
-            if owner not in (None, "messaging"):
+            if owner not in (None, "messaging", "contracts"):
                 offenders.append((path.name, module))
 
     assert offenders == []
@@ -133,54 +135,39 @@ def test_services_only_depend_on_each_other_through_known_exceptions():
     for path in production_sources():
         module_name = ".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
         source_service = service_of(module_name)
-        if source_service in (None, "main", "messaging"):
+        if source_service in (None, "main", "messaging", "contracts"):
             continue
         for imported in imported_modules(path):
             if not imported.startswith("app."):
                 continue
             target_service = service_of(imported)
-            if target_service not in (None, "messaging", source_service):
+            if target_service not in (None, "messaging", "contracts", source_service):
                 found.add((source_service, target_service))
 
     assert found == ALLOWED_SERVICE_DEPENDENCIES
 
 
-def compose_default(name):
-    """Return the default value the compose file gives to an env variable."""
-    text = COMPOSE.read_text(encoding="utf-8")
-    match = re.search(rf"\$\{{{name}:-(\d+)\}}", text)
-    assert match, f"{name} has no numeric default in compose.yaml"
-    return int(match.group(1))
-
-
-@requires_compose
-def test_deployed_timeouts_agree_with_the_code_defaults():
-    settings = OrchestratorSettings()
-    download = compose_default("DOWNLOAD_TIMEOUT_SECONDS")
-    upload = compose_default("IMPORT_TIMEOUT_SECONDS")
-
-    assert download == settings.request_timeout_seconds
-    assert upload == settings.uploader_timeout_seconds
-
-
-@requires_compose
-def test_every_layer_waits_at_least_as_long_as_the_layer_below():
-    worst_case = OrchestratorSettings(
-        request_timeout_seconds=compose_default("DOWNLOAD_TIMEOUT_SECONDS"),
-        uploader_timeout_seconds=compose_default("IMPORT_TIMEOUT_SECONDS"),
-    ).worst_case_run_seconds
-
-    # The scheduler must not give up on a run the orchestrator is still doing,
-    # and the stuck-worker limit must not fire during a legitimate long run.
-    assert compose_default("ORCHESTRATOR_RUN_TIMEOUT_SECONDS") >= worst_case
-    assert compose_default("HEALTH_MAX_BUSY_SECONDS") >= worst_case
-
-
-@requires_compose
-def test_the_orchestrator_kafka_consumer_outlives_the_worst_case_run():
-    settings = OrchestratorSettings(
-        request_timeout_seconds=compose_default("DOWNLOAD_TIMEOUT_SECONDS"),
-        uploader_timeout_seconds=compose_default("IMPORT_TIMEOUT_SECONDS"),
+def test_orchestrator_service_has_been_removed():
+    source_files = (
+        list((APP_DIR / "orchestrator").rglob("*.py"))
+        if (APP_DIR / "orchestrator").exists()
+        else []
     )
+    assert source_files == []
+    assert "orchestrator:" not in COMPOSE.read_text(encoding="utf-8")
 
-    assert max_poll_interval_ms(settings) > settings.worst_case_run_seconds * 1000
+
+def test_pub_sub_pipeline_routes_reference_to_current_and_core_to_uploader():
+    assert reference_consumer.REFERENCE_SYNC_REQUESTS == topics.REFERENCE_SYNC_REQUESTS
+    assert current_consumer.REFERENCE_DOWNLOADS == topics.REFERENCE_DOWNLOADS
+    assert core_consumer.CORE_INPUT_TOPICS == [
+        topics.REFERENCE_DOWNLOADS,
+        topics.CURRENT_DOWNLOADS,
+    ]
+    assert uploader_consumer.CORE_PROCESS_RESULTS == topics.CORE_PROCESS_RESULTS
+
+
+def test_message_envelope_is_owned_by_the_contracts_package():
+    from app.contracts.models import Envelope
+
+    assert Envelope.__module__ == "app.contracts.models"

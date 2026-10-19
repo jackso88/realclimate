@@ -7,8 +7,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
+from app.uploader.models import UploaderEnvironment
+
 from app.uploader.exceptions import UploaderConfigurationError
-from app.uploader.models import Settings, UploaderEnvironment
+from app.uploader.models import Settings
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:

@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.scheduler import main as scheduler_main
-from app.scheduler.producer import publish_workflow_run
+from app.scheduler.producer import publish_reference_sync
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_registers_a_single_coalescing_job(daemon):
 
     daemon.scheduler.add_job.assert_called_once()
     args, kwargs = daemon.scheduler.add_job.call_args
-    assert args[0].func is publish_workflow_run
+    assert args[0].func is publish_reference_sync
     assert args[0].keywords["settings"].timezone == "Europe/Minsk"
     assert args[1] == "cron-trigger"
     assert kwargs == {

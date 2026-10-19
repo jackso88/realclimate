@@ -1,9 +1,13 @@
 """Validate Google Sheets credentials without downloading spreadsheet data."""
 
-from app.downloader.reference.config import SCOPES, configure_logging, load_settings
 from app.downloader.reference.google_oauth import (
     get_credentials,
     get_service_account_credentials,
+)
+from app.downloader.reference.config import (
+    SCOPES,
+    configure_logging,
+    load_settings,
 )
 
 
