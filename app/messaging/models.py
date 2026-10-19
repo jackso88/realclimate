@@ -1,23 +1,43 @@
 """Serializable Kafka message envelopes."""
 
-from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-import json
 from typing import Any, Mapping
 from uuid import uuid4
 
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-@dataclass(frozen=True)
-class Envelope:
-    """Transport metadata and JSON payload for one request or response."""
 
-    message_id: str
-    command: str
-    payload: dict[str, Any]
+class Envelope(BaseModel):
+    """Validated transport metadata and payload for one Kafka message.
+
+    Args:
+        message_id: Unique identifier for this message.
+        command: Operation name understood by the receiving service.
+        payload: JSON-compatible command-specific data.
+        correlation_id: Optional ID linking this message to its request.
+        reply_to: Optional Kafka topic for a correlated response.
+        error: Optional failure detail returned by a service.
+        created_at: ISO-8601 timestamp in UTC.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    message_id: str = Field(min_length=1)
+    command: str = Field(min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
     correlation_id: str | None = None
     reply_to: str | None = None
     error: str | None = None
-    created_at: str = ""
+    created_at: AwareDatetime
 
     @classmethod
     def create(
@@ -48,12 +68,12 @@ class Envelope:
             correlation_id=correlation_id,
             reply_to=reply_to,
             error=error,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(timezone.utc),
         )
 
     def encode(self) -> bytes:
         """Serialize the envelope as UTF-8 JSON bytes."""
-        return json.dumps(asdict(self), ensure_ascii=False).encode("utf-8")
+        return self.model_dump_json().encode("utf-8")
 
     @classmethod
     def decode(cls, value: bytes) -> "Envelope":
@@ -66,27 +86,32 @@ class Envelope:
             The reconstructed envelope.
 
         Raises:
-            UnicodeDecodeError: If the record is not UTF-8 encoded.
-            json.JSONDecodeError: If the record does not contain valid JSON.
-            TypeError: If the JSON object does not match the envelope fields.
+            pydantic.ValidationError: If the record does not contain valid JSON
+                or does not match the envelope schema and field constraints.
         """
-        return cls(**json.loads(value.decode("utf-8")))
+        return cls.model_validate_json(value)
 
 
-@dataclass(frozen=True)
-class KafkaClientSettings:
-    """Connection and authentication settings for a Kafka client.
+class KafkaClientSettings(BaseModel):
+    """Validated TLS and SASL settings for a Kafka client.
 
-    The password is excluded from the generated representation to reduce the
-    chance of exposing it through debug logs.
+    Args:
+        bootstrap_servers: Comma-separated Kafka broker addresses.
+        username: SASL/SCRAM username; hidden from model representations.
+        password: SASL/SCRAM password; hidden from model representations.
+        ca_location: Path to the trusted Kafka CA certificate.
+        security_protocol: Kafka transport security protocol, normally SASL_SSL.
+        sasl_mechanism: SASL mechanism, normally SCRAM-SHA-512.
     """
 
-    bootstrap_servers: str
-    username: str = field(repr=False)
-    password: str = field(repr=False)
-    ca_location: str
-    security_protocol: str = "SASL_SSL"
-    sasl_mechanism: str = "SCRAM-SHA-512"
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    bootstrap_servers: str = Field(min_length=1)
+    username: str = Field(repr=False, min_length=1)
+    password: str = Field(repr=False, min_length=1)
+    ca_location: str = Field(min_length=1)
+    security_protocol: str = Field(default="SASL_SSL", min_length=1)
+    sasl_mechanism: str = Field(default="SCRAM-SHA-512", min_length=1)
 
     def to_dict(self) -> dict[str, object]:
         """Serialize the settings into a ``confluent-kafka`` config mapping.
@@ -128,11 +153,33 @@ class KafkaClientSettings:
             "password": "sasl.password",
             "ca_location": "ssl.ca.location",
         }
-        settings: dict[str, str] = {}
-        for field_name, property_name in property_names.items():
-            value = values.get(property_name)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"Missing or invalid Kafka property: {property_name}")
-            settings[field_name] = value
+        settings = {
+            field_name: values.get(property_name)
+            for field_name, property_name in property_names.items()
+        }
+        try:
+            return cls.model_validate(settings)
+        except ValidationError as error:
+            field_name = str(error.errors()[0]["loc"][0])
+            property_name = property_names[field_name]
+            raise ValueError(
+                f"Missing or invalid Kafka property: {property_name}"
+            ) from error
 
-        return cls(**settings)
+
+class KafkaEnvironment(BaseModel):
+    """Validated Kafka credentials and certificate paths from the environment.
+
+    Args:
+        username: SASL/SCRAM username.
+        password: SASL/SCRAM password; hidden from representations.
+        ca_location: File path to the trusted Kafka CA bundle.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    username: str = Field(validation_alias="KAFKA_SASL_USERNAME", min_length=1)
+    password: str = Field(
+        validation_alias="KAFKA_SASL_PASSWORD", min_length=1, repr=False
+    )
+    ca_location: str = Field(validation_alias="KAFKA_SSL_CA_LOCATION", min_length=1)

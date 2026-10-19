@@ -44,7 +44,12 @@ def test_load_client_settings_rejects_missing_values(monkeypatch, missing_variab
 
 
 def test_kafka_settings_round_trip():
-    original = KafkaClientSettings("broker:9093", "user", "password", "/tmp/ca.pem")
+    original = KafkaClientSettings(
+        bootstrap_servers="broker:9093",
+        username="user",
+        password="password",
+        ca_location="/tmp/ca.pem",
+    )
 
     restored = KafkaClientSettings.from_dict(original.to_dict())
 

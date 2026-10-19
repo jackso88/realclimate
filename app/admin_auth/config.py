@@ -5,34 +5,10 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
 from app.admin_auth.exceptions import AdminLoginError
-from app.admin_auth.models import AdminSettings
-
-
-def _positive_int(variable: str, default: int) -> int:
-    """Read a positive integer setting with a default value.
-
-    Args:
-        variable: Environment variable to read.
-        default: Value used when the variable is not configured.
-
-    Returns:
-        The parsed positive integer.
-
-    Raises:
-        AdminLoginError: If the value is not a positive integer.
-    """
-    raw_value = os.getenv(variable)
-    if raw_value is None:
-        return default
-    try:
-        value = int(raw_value)
-    except ValueError as error:
-        raise AdminLoginError(f"{variable} must be a positive integer") from error
-    if value <= 0:
-        raise AdminLoginError(f"{variable} must be a positive integer")
-    return value
+from app.admin_auth.models import AdminEnvironment, AdminSettings
 
 
 def load_settings(env_file: str | Path | None = None) -> AdminSettings:
@@ -64,35 +40,53 @@ def load_settings(env_file: str | Path | None = None) -> AdminSettings:
         "TAPTOP_VER_ID",
         "TAPTOP_DESIGN_ID",
     )
-    missing = [key for key in required if not os.getenv(key)]
+    environment = dict(os.environ)
+    missing = [key for key in required if not environment.get(key)]
     if missing:
         raise AdminLoginError(f"Missing required settings: {', '.join(missing)}")
 
     try:
-        ver_id = int(os.environ["TAPTOP_VER_ID"])
-        design_id = int(os.environ["TAPTOP_DESIGN_ID"])
-    except ValueError as error:
-        raise AdminLoginError(
-            "TAPTOP_VER_ID and TAPTOP_DESIGN_ID must be integers"
-        ) from error
-
-    return AdminSettings(
-        base_url=os.environ["TAPTOP_BASE_URL"].rstrip("/"),
-        cms_url=os.environ["TAPTOP_CMS_URL"].rstrip("/"),
-        username=os.environ["TAPTOP_USERNAME"],
-        password=os.environ["TAPTOP_PASSWORD"],
-        access=os.environ["TAPTOP_ACCESS"],
-        ver_id=ver_id,
-        design_id=design_id,
-        session_cache_ttl_seconds=_positive_int(
-            "ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS", 14400
-        ),
-        login_path=os.getenv("TAPTOP_LOGIN_PATH", "/login"),
-        mosaic_path=os.getenv("TAPTOP_MOSAIC_PATH", "/mosaic"),
-        form_name=os.getenv("TAPTOP_FORM_NAME", "login_form"),
-        username_field=os.getenv("TAPTOP_USERNAME_FIELD", "email"),
-        password_field=os.getenv("TAPTOP_PASSWORD_FIELD", "password"),
-    )
+        config = AdminEnvironment.model_validate(environment)
+        return AdminSettings(
+            base_url=config.base_url,
+            cms_url=config.cms_url,
+            username=config.username,
+            password=config.password,
+            access=config.access,
+            ver_id=config.ver_id,
+            design_id=config.design_id,
+            session_cache_ttl_seconds=config.session_cache_ttl_seconds,
+            login_path=config.login_path,
+            mosaic_path=config.mosaic_path,
+            form_name=config.form_name,
+            username_field=config.username_field,
+            password_field=config.password_field,
+            bootstrap_servers=config.bootstrap_servers,
+        )
+    except ValidationError as error:
+        fields = {str(item["loc"][0]) for item in error.errors()}
+        if fields.intersection({"TAPTOP_VER_ID", "TAPTOP_DESIGN_ID"}):
+            is_parse_error = any(
+                item["type"] == "int_parsing"
+                and item["loc"][0] in {"TAPTOP_VER_ID", "TAPTOP_DESIGN_ID"}
+                for item in error.errors()
+            )
+            if is_parse_error:
+                raise AdminLoginError(
+                    "TAPTOP_VER_ID and TAPTOP_DESIGN_ID must be integers"
+                ) from error
+            raise AdminLoginError(
+                "TAPTOP_VER_ID and TAPTOP_DESIGN_ID must be positive integers"
+            ) from error
+        if "ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS" in fields:
+            raise AdminLoginError(
+                "ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS must be a positive integer"
+            ) from error
+        if fields.intersection({"base_url", "cms_url"}):
+            raise AdminLoginError(
+                "TAPTOP_BASE_URL and TAPTOP_CMS_URL must be absolute HTTP or HTTPS URLs"
+            ) from error
+        raise AdminLoginError(f"Invalid admin auth settings: {error}") from error
 
 
 def configure_logging(level: int = logging.INFO) -> None:

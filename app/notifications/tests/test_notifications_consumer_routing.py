@@ -63,19 +63,23 @@ def test_unknown_commands_are_logged_and_not_sent(send, caplog):
 
 def test_main_runs_the_notification_worker(monkeypatch):
     run_consumer = Mock()
+    settings = consumer.NotificationSettings()
     monkeypatch.setattr(consumer, "configure_logging", Mock())
     monkeypatch.setattr(consumer, "run_consumer", run_consumer)
+    monkeypatch.setattr(consumer, "load_settings", lambda: settings)
     monkeypatch.delenv("KAFKA_BOOTSTRAP_SERVERS", raising=False)
 
     consumer.main()
 
-    run_consumer.assert_called_once_with(
+    args, kwargs = run_consumer.call_args
+    assert args[:3] == (
         "localhost:9092",
         CORE_NOTIFICATIONS,
         "telegram-notifications",
-        handle_notification,
-        service_name="notifications",
     )
+    assert args[3].func is handle_notification
+    assert args[3].keywords == {"settings": settings}
+    assert kwargs == {"service_name": "notifications"}
 
 
 def test_a_first_run_report_listing_hundreds_of_articles_is_delivered_in_full(

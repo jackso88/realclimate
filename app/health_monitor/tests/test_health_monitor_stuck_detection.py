@@ -89,7 +89,7 @@ def test_a_worker_over_its_limit_is_reported_stuck_once():
 
     assert stuck_transitions(first) == [
         ServiceTransition(
-            "core",
+            service="core",
             available=False,
             kind=STUCK,
             busy_seconds=700.0,
@@ -183,7 +183,11 @@ def test_a_service_that_never_reported_busy_time_is_never_stuck():
 
 def test_stuck_alert_names_the_service_and_both_durations():
     transition = ServiceTransition(
-        "core", False, kind=STUCK, busy_seconds=6000.0, limit_seconds=5400
+        service="core",
+        available=False,
+        kind=STUCK,
+        busy_seconds=6000.0,
+        limit_seconds=5400,
     )
 
     text = _transition_text(transition, timeout_seconds=120)
@@ -195,7 +199,7 @@ def test_stuck_alert_names_the_service_and_both_durations():
 
 
 def test_recovery_from_stuck_has_its_own_message():
-    transition = ServiceTransition("core", True, kind=STUCK)
+    transition = ServiceTransition(service="core", available=True, kind=STUCK)
 
     text = _transition_text(transition, timeout_seconds=120)
 
@@ -203,8 +207,12 @@ def test_recovery_from_stuck_has_its_own_message():
 
 
 def test_availability_messages_are_unchanged():
-    down = _transition_text(ServiceTransition("core", False), timeout_seconds=120)
-    up = _transition_text(ServiceTransition("core", True), timeout_seconds=120)
+    down = _transition_text(
+        ServiceTransition(service="core", available=False), timeout_seconds=120
+    )
+    up = _transition_text(
+        ServiceTransition(service="core", available=True), timeout_seconds=120
+    )
 
     assert (
         down == "🚨 Сервис «core» недоступен: heartbeat не поступал более 120 секунд."

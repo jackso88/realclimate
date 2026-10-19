@@ -189,7 +189,9 @@ def test_start_import_propagates_http_errors():
     session = FakeSession(posts=[FakeResponse(error=error)])
 
     with pytest.raises(requests.HTTPError):
-        start_product_import(session, SETTINGS, UploadedFile("99", "processed.csv"))
+        start_product_import(
+            session, SETTINGS, UploadedFile(file_id="99", filename="processed.csv")
+        )
 
 
 def test_wait_returns_the_new_task_once_it_is_done(no_sleep):
@@ -203,7 +205,7 @@ def test_wait_returns_the_new_task_once_it_is_done(no_sleep):
 
     task = wait_for_import_completion(session, SETTINGS, baseline_cron_num=5)
 
-    assert task == ImportQueueItem(6, "Готово")
+    assert task == ImportQueueItem(cron_num=6, status="Готово")
     assert len(session.calls) == 3
     assert no_sleep == [5, 5]
 
@@ -258,7 +260,9 @@ def test_wait_times_out_when_the_task_never_appears(monkeypatch, no_sleep):
 def test_delete_removes_the_file_by_its_identifier():
     session = FakeSession(gets=[FakeResponse()])
 
-    delete_uploaded_file(session, SETTINGS, UploadedFile("99", "processed.csv"))
+    delete_uploaded_file(
+        session, SETTINGS, UploadedFile(file_id="99", filename="processed.csv")
+    )
 
     _, url, kwargs = session.calls[0]
     params = dict(kwargs["params"])
@@ -273,4 +277,6 @@ def test_delete_propagates_http_errors():
     session = FakeSession(gets=[FakeResponse(error=error)])
 
     with pytest.raises(requests.HTTPError):
-        delete_uploaded_file(session, SETTINGS, UploadedFile("99", "processed.csv"))
+        delete_uploaded_file(
+            session, SETTINGS, UploadedFile(file_id="99", filename="processed.csv")
+        )

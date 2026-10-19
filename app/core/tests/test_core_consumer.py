@@ -1,7 +1,7 @@
 """Tests for the core request/reply processing contract."""
 
-from app.core.models import CorePipelineOutput
 from app.core import consumer
+from app.core.models import CorePipelineOutput
 from app.messaging.models import Envelope
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
@@ -83,7 +83,12 @@ def test_core_processes_supplied_csv_and_publishes_result(monkeypatch, tmp_path)
 
 
 def test_core_does_not_publish_empty_change_notification(monkeypatch, tmp_path):
-    output = CorePipelineOutput(b"processed", b"excluded", [], {})
+    output = CorePipelineOutput(
+        processed_csv=b"processed",
+        excluded_csv=b"excluded",
+        detailed_changes=[],
+        updated_duplicate_map={},
+    )
     monkeypatch.setattr(consumer, "process_catalogue", lambda *_: output)
     monkeypatch.setattr(consumer, "encode_duplicate_map", lambda _: {"entries": []})
     monkeypatch.setenv("EXCLUDED_CSV_PATH", str(tmp_path / "excluded.csv"))

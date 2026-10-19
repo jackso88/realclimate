@@ -2,7 +2,8 @@
 
 import pytest
 
-from app.health_monitor.config import DEFAULT_MONITORED_SERVICES, load_settings
+from app.health_monitor.config import load_settings
+from app.health_monitor.models import HealthMonitorEnvironment
 
 
 def test_load_settings_uses_defaults(monkeypatch):
@@ -17,7 +18,10 @@ def test_load_settings_uses_defaults(monkeypatch):
     settings = load_settings()
 
     assert settings.bootstrap_servers == "localhost:9092"
-    assert settings.monitored_services == DEFAULT_MONITORED_SERVICES
+    assert (
+        settings.monitored_services
+        == HealthMonitorEnvironment.DEFAULT_MONITORED_SERVICES
+    )
     assert settings.heartbeat_timeout_seconds == 120
     assert settings.startup_grace_seconds == 180
     assert settings.check_interval_seconds == 10

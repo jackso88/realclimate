@@ -31,6 +31,7 @@ def cms_environment(monkeypatch):
     }
     for name, value in values.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     return values
 
 

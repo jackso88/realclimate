@@ -1,11 +1,11 @@
 """Kafka worker that processes supplied catalogue data and returns results."""
 
 import logging
-import os
-from pathlib import Path
+from functools import partial
 
-from app.core.config import configure_logging
+from app.core.config import configure_logging, load_settings
 from app.core.duplicate_mapping import DUPLICATE_CODE_MAP
+from app.core.models import CoreSettings
 from app.core.pipeline import (
     decode_duplicate_map,
     encode_duplicate_map,
@@ -24,7 +24,9 @@ from app.messaging.topics import (
 logger = logging.getLogger(__name__)
 
 
-def handle_process(message: Envelope, bus) -> None:
+def handle_process(
+    message: Envelope, bus, settings: CoreSettings | None = None
+) -> None:
     """Process caller-supplied source CSVs and publish the core result.
 
     The core no longer downloads inputs or invokes the uploader. It emits a
@@ -35,6 +37,7 @@ def handle_process(message: Envelope, bus) -> None:
         message: Request containing compressed reference and current CSVs.
         bus: Kafka bus used to read and persist duplicate state and publish
             result, notification, and response messages.
+        settings: Optional core settings injected once at worker startup.
     """
     try:
         if message.command != "process_catalogue":
@@ -50,12 +53,9 @@ def handle_process(message: Envelope, bus) -> None:
         )
         output = process_catalogue(reference_csv, current_csv, duplicate_map)
 
-        excluded_path = Path(
-            os.getenv(
-                "EXCLUDED_CSV_PATH",
-                "/app/storage/outputs/for_zalivka_excluded.csv",
-            )
-        )
+        if settings is None:
+            settings = load_settings()
+        excluded_path = settings.excluded_csv_path
         excluded_path.parent.mkdir(parents=True, exist_ok=True)
         excluded_path.write_bytes(output.excluded_csv)
 
@@ -103,11 +103,12 @@ def handle_process(message: Envelope, bus) -> None:
 def main() -> None:
     """Run the core data-processing Kafka consumer."""
     configure_logging()
+    settings = load_settings()
     run_consumer(
-        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        settings.bootstrap_servers,
         CORE_PROCESS_REQUESTS,
         "core-service",
-        handle_process,
+        partial(handle_process, settings=settings),
         service_name="core",
     )
 

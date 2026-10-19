@@ -1,24 +1,30 @@
 """Kafka consumer that forwards failures and non-empty change reports."""
 
 import logging
-import os
+from functools import partial
 
 from app.messaging.kafka import run_consumer
 from app.messaging.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
-from app.notifications.config import configure_logging
+from app.notifications.config import configure_logging, load_settings
+from app.notifications.models import NotificationSettings
 from app.notifications.telegram import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
 
-def handle_notification(message: Envelope, _bus) -> None:
+def handle_notification(
+    message: Envelope,
+    _bus,
+    settings: NotificationSettings | None = None,
+) -> None:
     """Send failures and non-empty change reports to the admin chat.
 
     Args:
         message: Notification envelope containing a failure or change report.
         _bus: Kafka bus supplied by the consumer callback; unused by this
             Telegram-only handler.
+        settings: Optional notification settings injected once at worker startup.
     """
     if message.command == "failure":
         payload = message.payload
@@ -34,17 +40,21 @@ def handle_notification(message: Envelope, _bus) -> None:
     else:
         logger.warning("Unknown notification command: %s", message.command)
         return
-    send_telegram_message(text)
+    if settings is None:
+        send_telegram_message(text)
+    else:
+        send_telegram_message(text, settings=settings)
 
 
 def main() -> None:
     """Run the Telegram notification consumer."""
     configure_logging()
+    settings = load_settings()
     run_consumer(
-        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        settings.bootstrap_servers,
         CORE_NOTIFICATIONS,
         "telegram-notifications",
-        handle_notification,
+        partial(handle_notification, settings=settings),
         service_name="notifications",
     )
 

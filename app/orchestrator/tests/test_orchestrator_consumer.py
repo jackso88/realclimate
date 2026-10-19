@@ -83,21 +83,22 @@ def test_failed_settings_load_is_reported_like_any_other_failure(
 
 def test_main_runs_the_orchestrator_worker(monkeypatch):
     run_consumer = Mock()
+    settings = OrchestratorSettings()
     monkeypatch.setattr(consumer, "configure_logging", Mock())
     monkeypatch.setattr(consumer, "run_consumer", run_consumer)
-    monkeypatch.setattr(consumer, "load_settings", lambda: OrchestratorSettings())
+    monkeypatch.setattr(consumer, "load_settings", lambda: settings)
     monkeypatch.delenv("KAFKA_BOOTSTRAP_SERVERS", raising=False)
 
     consumer.main()
 
-    run_consumer.assert_called_once_with(
-        "localhost:9092",
-        ORCHESTRATOR_RUNS,
-        "orchestrator-service",
-        consumer.handle_run,
-        service_name="orchestrator",
-        max_poll_interval_ms=5_100_000,
-    )
+    args, kwargs = run_consumer.call_args
+    assert args[:3] == ("localhost:9092", ORCHESTRATOR_RUNS, "orchestrator-service")
+    assert args[3].func is consumer.handle_run
+    assert args[3].keywords == {"settings": settings}
+    assert kwargs == {
+        "service_name": "orchestrator",
+        "max_poll_interval_ms": 5_100_000,
+    }
 
 
 def test_main_sizes_the_poll_interval_from_the_configured_timeouts(monkeypatch):
@@ -111,7 +112,7 @@ def test_main_sizes_the_poll_interval_from_the_configured_timeouts(monkeypatch):
 
     consumer.main()
 
-    expected_seconds = 3 * 1800 + 3600 + consumer.POLL_INTERVAL_MARGIN_SECONDS
+    expected_seconds = 3 * 1800 + 3600 + settings.poll_interval_margin_seconds
     interval = run_consumer.call_args.kwargs["max_poll_interval_ms"]
     assert interval == expected_seconds * 1000
 

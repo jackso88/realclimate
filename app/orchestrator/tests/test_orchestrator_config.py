@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.orchestrator import config
-from app.orchestrator.config import _positive_int, load_settings
+from app.orchestrator import models
+from app.orchestrator.config import load_settings
 from app.orchestrator.models import OrchestratorSettings
 
 
@@ -16,31 +16,14 @@ def clean_environment(monkeypatch):
         "DOWNLOAD_TIMEOUT_SECONDS",
         "IMPORT_TIMEOUT_SECONDS",
         "ORCHESTRATOR_INSTANCE_ID",
-        "TEST_POSITIVE_INT",
+        "ORCHESTRATOR_POLL_INTERVAL_MARGIN_SECONDS",
+        "KAFKA_BOOTSTRAP_SERVERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
 
-def test_positive_int_returns_the_default_when_unset():
-    assert _positive_int("TEST_POSITIVE_INT", 7) == 7
-
-
-def test_positive_int_parses_a_configured_value(monkeypatch):
-    monkeypatch.setenv("TEST_POSITIVE_INT", "42")
-
-    assert _positive_int("TEST_POSITIVE_INT", 7) == 42
-
-
-@pytest.mark.parametrize("value", ["0", "-5", "abc", "1.5", ""])
-def test_positive_int_rejects_invalid_values(monkeypatch, value):
-    monkeypatch.setenv("TEST_POSITIVE_INT", value)
-
-    with pytest.raises(ValueError, match="TEST_POSITIVE_INT must be a positive"):
-        _positive_int("TEST_POSITIVE_INT", 7)
-
-
 def test_load_settings_defaults_and_hostname_identity(monkeypatch):
-    monkeypatch.setattr(config, "socket", SimpleNamespace(gethostname=lambda: "host-1"))
+    monkeypatch.setattr(models, "socket", SimpleNamespace(gethostname=lambda: "host-1"))
 
     settings = load_settings()
 

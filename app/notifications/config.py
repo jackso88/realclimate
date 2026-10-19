@@ -1,6 +1,20 @@
 """Telegram notification service configuration."""
 
 import logging
+import os
+
+from app.notifications.models import NotificationSettings
+
+
+def load_settings() -> NotificationSettings:
+    """Load the notification service's process and dotenv configuration.
+
+    Returns:
+        Telegram and Kafka settings. Bot credentials remain optional until a
+        notification is sent, allowing the consumer to start and report config
+        errors through its normal logs.
+    """
+    return NotificationSettings.model_validate(dict(os.environ))
 
 
 def configure_logging(level: int = logging.INFO) -> None:

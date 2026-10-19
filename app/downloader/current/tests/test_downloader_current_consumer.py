@@ -11,7 +11,12 @@ def test_download_handler_authenticates_fetches_cleans_and_replies(monkeypatch):
     settings = object()
     session = object()
     request = Envelope.create("download_csv", {}, reply_to="response")
-    downloaded = DownloadedCsv(12, "export.csv", b"csv bytes", "archive.zip")
+    downloaded = DownloadedCsv(
+        cron_num=12,
+        filename="export.csv",
+        content=b"csv bytes",
+        archive_filename="archive.zip",
+    )
     monkeypatch.setattr(consumer, "load_settings", lambda: settings)
     monkeypatch.setattr(consumer, "request_session", Mock(return_value=session))
     monkeypatch.setattr(consumer, "get_latest_export_cron_num", Mock(return_value=11))

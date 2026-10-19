@@ -1,9 +1,9 @@
 """Heartbeat publishing helpers for long-running Kafka services."""
 
-from datetime import datetime, timezone
 import logging
-from threading import Event, Lock, Thread
 import time
+from datetime import datetime, timezone
+from threading import Event, Lock, Thread
 
 from app.messaging.models import Envelope
 from app.messaging.topics import HEALTH_HEARTBEATS

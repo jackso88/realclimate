@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app.health_monitor.config import DEFAULT_MONITORED_SERVICES
+from app.health_monitor.models import HealthMonitorEnvironment
 from app.messaging import topics
 from app.orchestrator.consumer import max_poll_interval_ms
 from app.orchestrator.models import OrchestratorSettings
@@ -98,7 +98,7 @@ def test_every_heartbeating_service_is_monitored_and_vice_versa():
         for pattern in sender_patterns:
             senders.update(re.findall(pattern, text))
 
-    assert senders == set(DEFAULT_MONITORED_SERVICES)
+    assert senders == set(HealthMonitorEnvironment.DEFAULT_MONITORED_SERVICES)
 
 
 @requires_compose

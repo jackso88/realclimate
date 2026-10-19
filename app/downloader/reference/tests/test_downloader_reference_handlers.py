@@ -20,6 +20,7 @@ SETTINGS = SimpleNamespace(
     sheet_name="1. Для заливки",
     credentials_file="credentials.json",
     token_file="token.json",
+    bootstrap_servers="localhost:9092",
 )
 
 
@@ -172,17 +173,19 @@ def test_main_runs_the_reference_downloader_worker(monkeypatch):
     run_consumer = Mock()
     monkeypatch.setattr(consumer, "configure_logging", Mock())
     monkeypatch.setattr(consumer, "run_consumer", run_consumer)
-    monkeypatch.delenv("KAFKA_BOOTSTRAP_SERVERS", raising=False)
+    monkeypatch.setattr(consumer, "load_settings", lambda: SETTINGS)
 
     consumer.main()
 
-    run_consumer.assert_called_once_with(
+    args, kwargs = run_consumer.call_args
+    assert args[:3] == (
         "localhost:9092",
         REFERENCE_DOWNLOAD_REQUESTS,
         "reference-downloader-service",
-        consumer.handle_request,
-        service_name="downloader_reference",
     )
+    assert args[3].func is consumer.handle_request
+    assert args[3].keywords == {"settings": SETTINGS}
+    assert kwargs == {"service_name": "downloader_reference"}
 
 
 def test_publish_reference_csv_sends_compressed_content(monkeypatch):

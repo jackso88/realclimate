@@ -10,10 +10,7 @@ if TYPE_CHECKING:
     from confluent_kafka import Consumer, Producer
 
 from app.messaging.config import load_client_settings
-from app.messaging.exceptions import (
-    RemoteServiceError,
-    RequestTimeoutError,
-)
+from app.messaging.exceptions import RemoteServiceError, RequestTimeoutError
 from app.messaging.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
 

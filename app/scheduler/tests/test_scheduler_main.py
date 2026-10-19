@@ -58,14 +58,17 @@ def test_schedule_is_every_weekday_hour_from_nine_to_seventeen(daemon):
 def test_registers_a_single_coalescing_job(daemon):
     scheduler_main.main()
 
-    daemon.scheduler.add_job.assert_called_once_with(
-        publish_workflow_run,
-        "cron-trigger",
-        id="hourly-catalogue-run",
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=300,
-    )
+    daemon.scheduler.add_job.assert_called_once()
+    args, kwargs = daemon.scheduler.add_job.call_args
+    assert args[0].func is publish_workflow_run
+    assert args[0].keywords["settings"].timezone == "Europe/Minsk"
+    assert args[1] == "cron-trigger"
+    assert kwargs == {
+        "id": "hourly-catalogue-run",
+        "max_instances": 1,
+        "coalesce": True,
+        "misfire_grace_time": 300,
+    }
 
 
 def test_timezone_defaults_to_minsk(daemon):

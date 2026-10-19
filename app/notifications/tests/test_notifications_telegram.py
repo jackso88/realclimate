@@ -201,14 +201,16 @@ def test_every_part_fits_the_telegram_limit_including_its_label(post, pauses):
 
     texts = sent_texts(post)
     assert len(texts) > 1
-    assert all(len(text) <= telegram.TELEGRAM_MESSAGE_LIMIT for text in texts)
+    assert all(
+        len(text) <= telegram.load_settings().telegram_message_limit for text in texts
+    )
 
 
 def test_a_pause_separates_consecutive_parts(post, pauses):
     telegram.send_telegram_message("x" * 9000)
 
     assert len(pauses) == post.call_count - 1
-    assert set(pauses) == {telegram.PAUSE_BETWEEN_PARTS_SECONDS}
+    assert set(pauses) == {telegram.load_settings().pause_between_parts_seconds}
 
 
 def test_a_failure_in_a_later_part_raises_after_earlier_parts_were_sent(post, pauses):

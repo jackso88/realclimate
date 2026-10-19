@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Dataclasses shared across the cleaning / merging pipeline."""
+"""Validated models shared across the cleaning and merging pipeline."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional, Union
 
 # Type of the persistent duplicate-code mapping. The key uniquely (and
@@ -12,12 +12,20 @@ from typing import Optional, Union
 # "occurrence" starts at 1 and disambiguates the rare case where the
 # same code AND the same model repeat verbatim (e.g. identical
 # consumables listed twice).
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
+
 DuplicateKey = tuple[str, str, int]
 DuplicateMap = dict[DuplicateKey, str]
 
 
-@dataclass
-class ProductRecord:
+class ProductRecord(BaseModel):
     """One kept row of the catalogue, after all cleaning steps.
 
     Attributes:
@@ -30,7 +38,7 @@ class ProductRecord:
         retail_price: Retail price in BYN ("Розница"), already
             parsed to a float. Never ``None`` on a kept record,
             because rows with a missing price are excluded before
-            this dataclass is built. It can be ``0``: that is a
+            this model is built. It can be ``0``: that is a
             legitimate "not for sale" state, kept in the catalogue
             and hidden in current.csv (``hidden = 1``) rather than
             excluded.
@@ -48,13 +56,21 @@ class ProductRecord:
             ``category`` via ``helpers.map_category_to_folder``.
             Always set for a kept record — rows whose category
             couldn't be resolved never make it into ``kept``.
+
+    The fields map to source catalogue columns. ``code``, ``model``,
+    ``availability``, ``series``, ``brand``, ``type_``, ``category`` and
+    ``folder`` are text. ``retail_price`` and ``dealer_price`` are
+    non-negative BYN amounts. Empty ``category`` and ``folder`` values
+    are supported for rows constructed before category mapping.
     """
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     code: str
     model: str
     availability: str
-    retail_price: float
-    dealer_price: float
+    retail_price: float = Field(ge=0)
+    dealer_price: float = Field(ge=0)
     series: str
     brand: str
     type_: str
@@ -82,14 +98,19 @@ class ProductRecord:
         }
 
 
-@dataclass
-class ExcludedRecord:
+class ExcludedRecord(BaseModel):
     """One dropped row, kept around only for the manual-review CSV.
 
     Same fields as ProductRecord, but prices are kept as whatever
     ``parse_price`` produced (which may be ``None`` — that is usually
     *why* the row was excluded), plus a human-readable ``reason``.
+
+    Fields ``code``, ``model``, ``availability``, ``series``, ``brand``,
+    ``type_``, ``reason`` and ``category`` contain source text. The two
+    optional price fields contain non-negative BYN amounts or ``None``.
     """
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     code: str
     model: str
@@ -122,19 +143,27 @@ class ExcludedRecord:
         }
 
 
-@dataclass
-class ProcessResult:
-    """Everything produced by processing one batch of source rows."""
+class ProcessResult(BaseModel):
+    """Validated intermediate results from cleaning source catalogue rows.
 
-    kept: list[ProductRecord] = field(default_factory=list)
-    excluded: list[ExcludedRecord] = field(default_factory=list)
-    updated_map: DuplicateMap = field(default_factory=dict)
-    renamed_count: int = 0
-    skipped_divider_rows: int = 0
+    Args:
+        kept: Rows that passed validation and category filtering.
+        excluded: Rows saved for manual review.
+        updated_map: Updated persistent duplicate-code mapping.
+        renamed_count: Number of rows assigned a new duplicate code.
+        skipped_divider_rows: Number of source section-divider rows skipped.
+    """
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
+
+    kept: list[ProductRecord] = Field(default_factory=list)
+    excluded: list[ExcludedRecord] = Field(default_factory=list)
+    updated_map: DuplicateMap = Field(default_factory=dict)
+    renamed_count: int = Field(default=0, ge=0)
+    skipped_divider_rows: int = Field(default=0, ge=0)
 
 
-@dataclass
-class MergeResult:
+class MergeResult(BaseModel):
     """Outcome of merging cleaned records into an existing current.csv.
 
     Attributes:
@@ -174,26 +203,57 @@ class MergeResult:
             keep whatever "hidden" value they already had.
     """
 
-    rows: list[dict[str, str]] = field(default_factory=list)
-    header: list[str] = field(default_factory=list)
-    added_articles: list[str] = field(default_factory=list)
-    updated_articles: list[str] = field(default_factory=list)
-    renamed_articles: list[tuple[str, str]] = field(default_factory=list)
-    untouched_articles: list[str] = field(default_factory=list)
-    removed_articles: list[tuple[str, str]] = field(default_factory=list)
-    price_changes: list[tuple[str, Optional[float], float]] = field(
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
+
+    rows: list[dict[str, str]] = Field(default_factory=list)
+    header: list[str] = Field(default_factory=list)
+    added_articles: list[str] = Field(default_factory=list)
+    updated_articles: list[str] = Field(default_factory=list)
+    renamed_articles: list[tuple[str, str]] = Field(default_factory=list)
+    untouched_articles: list[str] = Field(default_factory=list)
+    removed_articles: list[tuple[str, str]] = Field(default_factory=list)
+    price_changes: list[tuple[str, Optional[float], float]] = Field(
         default_factory=list
     )
-    amount_changes: list[tuple[str, float, float]] = field(default_factory=list)
-    anomalous_price_articles: list[str] = field(default_factory=list)
-    hidden_changes: list[tuple[str, str, str]] = field(default_factory=list)
+    amount_changes: list[tuple[str, float, float]] = Field(default_factory=list)
+    anomalous_price_articles: list[str] = Field(default_factory=list)
+    hidden_changes: list[tuple[str, str, str]] = Field(default_factory=list)
 
 
-@dataclass
-class CorePipelineOutput:
-    """In-memory outputs produced by one complete catalogue run."""
+class CorePipelineOutput(BaseModel):
+    """Validated in-memory outputs produced by one complete catalogue run.
+
+    Args:
+        processed_csv: Complete CMS import CSV bytes.
+        excluded_csv: Manual-review CSV bytes persisted by the core worker.
+        detailed_changes: Human-readable descriptions of catalogue changes.
+        updated_duplicate_map: Duplicate mapping state for the next run.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     processed_csv: bytes
     excluded_csv: bytes
     detailed_changes: list[str]
     updated_duplicate_map: DuplicateMap
+
+
+class CoreSettings(BaseModel):
+    """Validated storage and Kafka settings for the core service.
+
+    Args:
+        bootstrap_servers: Kafka broker addresses.
+        excluded_csv_path: Path where the manual-review CSV is persisted.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    bootstrap_servers: str = Field(
+        default="localhost:9092",
+        validation_alias="KAFKA_BOOTSTRAP_SERVERS",
+        min_length=1,
+    )
+    excluded_csv_path: Path = Field(
+        default=Path("/app/storage/outputs/for_zalivka_excluded.csv"),
+        validation_alias="EXCLUDED_CSV_PATH",
+    )

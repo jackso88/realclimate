@@ -1,47 +1,39 @@
-"""Environment configuration for the workflow orchestrator."""
+"""Pydantic-backed environment configuration for the orchestrator."""
 
 import logging
 import os
-import socket
 
-from app.orchestrator.models import OrchestratorSettings
+from pydantic import ValidationError
 
-
-def _positive_int(variable: str, default: int) -> int:
-    """Read a positive integer environment value.
-
-    Args:
-        variable: Environment variable to read.
-        default: Value used when the variable is unset.
-
-    Returns:
-        Parsed positive integer.
-
-    Raises:
-        ValueError: If the configured value is not positive or not an integer.
-    """
-    raw_value = os.getenv(variable)
-    if raw_value is None:
-        return default
-    try:
-        value = int(raw_value)
-    except ValueError as error:
-        raise ValueError(f"{variable} must be a positive integer") from error
-    if value <= 0:
-        raise ValueError(f"{variable} must be a positive integer")
-    return value
+from app.orchestrator.models import OrchestratorEnvironment, OrchestratorSettings
 
 
 def load_settings() -> OrchestratorSettings:
-    """Load RPC timeouts and derive this worker's response group identity.
+    """Read and validate orchestrator timeout, identity, and broker settings.
 
     Returns:
-        Settings used to call downloader, core, and uploader services.
+        Validated settings used to call the worker services and run Kafka.
+
+    Raises:
+        ValueError: If a configured timeout is not a positive integer or the
+            consumer identity is empty.
     """
+    try:
+        config = OrchestratorEnvironment.model_validate(dict(os.environ))
+    except ValidationError as error:
+        errors = error.errors()
+        if errors:
+            name = str(errors[0]["loc"][0])
+            raise ValueError(
+                f"{name} must be a positive integer or non-empty value"
+            ) from error
+        raise ValueError(f"Invalid orchestrator settings: {error}") from error
     return OrchestratorSettings(
-        request_timeout_seconds=_positive_int("DOWNLOAD_TIMEOUT_SECONDS", 900),
-        uploader_timeout_seconds=_positive_int("IMPORT_TIMEOUT_SECONDS", 1800),
-        instance_id=os.getenv("ORCHESTRATOR_INSTANCE_ID", socket.gethostname()),
+        request_timeout_seconds=config.request_timeout_seconds,
+        uploader_timeout_seconds=config.uploader_timeout_seconds,
+        instance_id=config.instance_id,
+        bootstrap_servers=config.bootstrap_servers,
+        poll_interval_margin_seconds=config.poll_interval_margin_seconds,
     )
 
 
