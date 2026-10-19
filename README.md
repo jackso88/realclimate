@@ -147,7 +147,11 @@ Set `GOOGLE_AUTH_MODE=service_account` to use
 `service_account_secret.json` from that same ignored directory instead. Share
 the spreadsheet with the service account's email address as a reader before
 switching modes. Service-account access tokens are refreshed automatically and
-do not require the interactive authorization step.
+do not require the interactive authorization step. If Google denies the
+service account access, the downloader retries with cached user OAuth
+credentials when both `GOOGLE_CREDENTIALS_FILE` and `GOOGLE_TOKEN_FILE` are
+available. Initialize the user token once with `GOOGLE_AUTH_MODE=user` and
+`python -m app.downloader.reference.auth_cli` before relying on that fallback.
 
 
 ### Kafka TLS integration check

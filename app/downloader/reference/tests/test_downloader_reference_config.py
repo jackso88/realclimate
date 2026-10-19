@@ -103,8 +103,10 @@ class TestLoadSettings:
         assert settings.token_file == Path("/var/lib/app/token.json")
 
     def test_loads_service_account_mode_without_user_oauth_files(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("", encoding="utf-8")
         monkeypatch.setenv("GOOGLE_SHEET_URL", "https://sheets.example.test/id")
         monkeypatch.setenv("GOOGLE_SHEET_NAME", "Catalog")
         monkeypatch.setenv("GOOGLE_AUTH_MODE", "service_account")
@@ -115,7 +117,7 @@ class TestLoadSettings:
         monkeypatch.delenv("GOOGLE_CREDENTIALS_FILE", raising=False)
         monkeypatch.delenv("GOOGLE_TOKEN_FILE", raising=False)
 
-        settings = load_settings()
+        settings = load_settings(dotenv_path=env_file)
 
         assert settings.auth_mode == "service_account"
         assert settings.credentials_file is None

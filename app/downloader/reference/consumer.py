@@ -9,6 +9,7 @@ from app.downloader.reference.google_oauth import (
     get_credentials,
     get_service_account_credentials,
 )
+from app.downloader.reference.exceptions import ReferenceAuthenticationError
 from app.downloader.reference.config import (
     SCOPES,
     configure_logging,
@@ -38,17 +39,43 @@ def handle_request(message, bus) -> None:
                 settings.service_account_file,
                 SCOPES,
             )
+            client = gspread.authorize(credentials)
+            try:
+                spreadsheet = client.open_by_key(spreadsheet_id)
+            except PermissionError as service_account_error:
+                user_credentials_file = settings.credentials_file
+                user_token_file = settings.token_file
+                if (
+                    user_credentials_file is None
+                    or user_token_file is None
+                    or not user_credentials_file.is_file()
+                    or not user_token_file.is_file()
+                ):
+                    raise ReferenceAuthenticationError(
+                        "Service account cannot access the spreadsheet, and "
+                        "cached user OAuth credentials are unavailable"
+                    ) from service_account_error
+
+                logger.warning(
+                    "Service account cannot access the spreadsheet; "
+                    "retrying with cached user OAuth credentials"
+                )
+                user_credentials = get_credentials(
+                    user_credentials_file,
+                    user_token_file,
+                    SCOPES,
+                )
+                spreadsheet = gspread.authorize(user_credentials).open_by_key(
+                    spreadsheet_id
+                )
         else:
             credentials = get_credentials(
                 settings.credentials_file,
                 settings.token_file,
                 SCOPES,
             )
-        worksheet = (
-            gspread.authorize(credentials)
-            .open_by_key(spreadsheet_id)
-            .worksheet(settings.sheet_name)
-        )
+            spreadsheet = gspread.authorize(credentials).open_by_key(spreadsheet_id)
+        worksheet = spreadsheet.worksheet(settings.sheet_name)
         content = serialize_data_to_csv(worksheet.get_all_values())
         publish_reference_csv(bus, message, content)
         logger.info("Reference sheet downloaded into memory (%d bytes)", len(content))

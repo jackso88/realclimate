@@ -74,6 +74,8 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
     * Optional ``GOOGLE_AUTH_MODE`` (``user`` or ``service_account``; defaults to ``user``)
     * ``GOOGLE_CREDENTIALS_FILE`` and ``GOOGLE_TOKEN_FILE`` in user mode
     * ``GOOGLE_SERVICE_ACCOUNT_FILE`` in service-account mode
+    * Optional user OAuth paths in service-account mode for permission-denied
+        fallback
 
     Args:
         dotenv_path: Explicit path to the ``.env`` file. When omitted,
@@ -132,6 +134,12 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         service_account_file = _resolve_path(
             required("GOOGLE_SERVICE_ACCOUNT_FILE"), base_dir
         )
+        oauth_credentials_path = os.getenv("GOOGLE_CREDENTIALS_FILE")
+        oauth_token_path = os.getenv("GOOGLE_TOKEN_FILE")
+        if oauth_credentials_path:
+            credentials_file = _resolve_path(oauth_credentials_path, base_dir)
+        if oauth_token_path:
+            token_file = _resolve_path(oauth_token_path, base_dir)
 
     return Settings(
         spreadsheet_url=required("GOOGLE_SHEET_URL"),
