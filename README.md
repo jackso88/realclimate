@@ -132,11 +132,13 @@ commas. Delivery errors are logged without the bot token, which `requests` would
 otherwise print as part of the API URL.
 
 The scheduler runs at the start of each hour from 09:00 through 17:00 Monday to
-Friday in `Europe/Minsk`. Core downloads both source CSVs concurrently, processes
-them in memory, imports the result, and persists only
-`storage/outputs/for_zalivka_excluded.csv`. Kafka retains queue messages for one
-hour and keeps the duplicate-code mapping in a compacted state topic across
-core container restarts.
+Friday in `Europe/Minsk`. The orchestrator downloads the reference spreadsheet
+first and skips the rest of the workflow when its contents have not changed.
+After a reference change, it downloads current catalogue data and asks core to
+process both inputs; the uploader imports the result only when core reports
+changes. Core persists only `storage/outputs/for_zalivka_excluded.csv`. Kafka
+retains queue messages for one hour and keeps the duplicate-code mapping in a
+compacted state topic across core container restarts.
 Google's OAuth token is kept under `config/google/token.json`, alongside the
 ignored client secret, and persists across container restarts. Before starting
 the headless workers, run `python -m app.downloader.reference.auth_cli` once on

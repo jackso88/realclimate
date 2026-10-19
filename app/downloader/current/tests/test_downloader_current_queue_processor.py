@@ -12,6 +12,7 @@ from app.downloader.current.queue_processor import (
     delete_archive_from_admin,
     download_latest_export_content,
     find_latest_export_archive,
+    find_latest_queue_cron_num,
     start_product_export,
 )
 
@@ -51,6 +52,19 @@ def test_selects_highest_queue_number_with_zip_link():
 def test_queue_without_downloadable_archive_is_not_ready():
     with pytest.raises(ExportNotReadyError):
         find_latest_export_archive('<div class="cron-num">#9</div>', make_settings())
+
+
+def test_queue_snapshot_includes_newer_running_job_without_zip_link():
+    html = """
+    <div class="cron-list-item"><span class="cron-num">#17</span>
+      <span class="cron-link"><a href="/files/finished.zip">finished</a></span>
+    </div>
+    <div class="cron-list-item"><span class="cron-num">#29</span>
+      <span class="cron-status">Выполняется</span>
+    </div>
+    """
+
+    assert find_latest_queue_cron_num(html) == 29
 
 
 def test_export_csv_is_returned_in_memory_and_admin_archive_is_cleaned():
