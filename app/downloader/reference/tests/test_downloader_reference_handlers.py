@@ -1,5 +1,6 @@
 """Tests for the reference downloader's failure path, producer and entrypoints."""
 
+import hashlib
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 
@@ -8,11 +9,13 @@ import pytest
 from app.downloader.reference import auth_cli, consumer, producer
 from app.downloader.reference.config import SCOPES
 from app.downloader.reference.exceptions import ReferenceAuthenticationError
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.payloads import decode_bytes
 from app.messaging.topics import (
-    REFERENCE_DOWNLOAD_REQUESTS,
-    REFERENCE_DOWNLOAD_RESPONSES,
+    REFERENCE_DOWNLOADS,
+    REFERENCE_PIPELINE_COMPLETED,
+    REFERENCE_SNAPSHOT_STATE,
+    REFERENCE_SYNC_REQUESTS,
 )
 
 SETTINGS = SimpleNamespace(
@@ -25,12 +28,7 @@ SETTINGS = SimpleNamespace(
 
 
 def make_request():
-    return Envelope.create(
-        "download_reference",
-        {},
-        correlation_id="r-1",
-        reply_to=REFERENCE_DOWNLOAD_RESPONSES,
-    )
+    return Envelope.create("sync_reference", {}, correlation_id="r-1")
 
 
 @pytest.fixture
@@ -40,8 +38,9 @@ def sheet(monkeypatch):
         worksheet=Mock(),
         spreadsheet=Mock(),
         client=Mock(),
-        reply=Mock(),
-        publish=Mock(),
+        failure=Mock(),
+        publish=Mock(return_value=True),
+        checkpoint=Mock(),
         credentials=Mock(return_value="credentials"),
     )
     parts.worksheet.get_all_values.return_value = [["код", "модель"], ["НС-1", "A"]]
@@ -50,12 +49,13 @@ def sheet(monkeypatch):
     monkeypatch.setattr(consumer, "load_settings", lambda: SETTINGS)
     monkeypatch.setattr(consumer, "get_credentials", parts.credentials)
     monkeypatch.setattr(consumer.gspread, "authorize", Mock(return_value=parts.client))
-    monkeypatch.setattr(consumer, "publish_reply", parts.reply)
-    monkeypatch.setattr(consumer, "publish_reference_csv", parts.publish)
+    monkeypatch.setattr(consumer, "publish_failure", parts.failure)
+    monkeypatch.setattr(consumer, "publish_reference_if_changed", parts.publish)
+    monkeypatch.setattr(consumer, "checkpoint_completed_reference", parts.checkpoint)
     return parts
 
 
-def test_handler_reads_the_configured_worksheet_and_publishes_csv(sheet):
+def test_handler_reads_the_configured_worksheet_and_publishes_changed_snapshot(sheet):
     bus = object()
     request = make_request()
 
@@ -67,7 +67,7 @@ def test_handler_reads_the_configured_worksheet_and_publishes_csv(sheet):
     published = sheet.publish.call_args.args
     assert published[:2] == (bus, request)
     assert "НС-1".encode("utf-8") in published[2]
-    sheet.reply.assert_not_called()
+    sheet.failure.assert_not_called()
 
 
 def test_handler_uses_service_account_when_configured(sheet, monkeypatch):
@@ -132,21 +132,22 @@ def test_service_account_permission_denial_retries_with_cached_user_oauth(
         call(user_credentials.return_value),
     ]
     assert sheet.publish.called
-    sheet.reply.assert_not_called()
+    sheet.failure.assert_not_called()
 
 
-def test_google_failure_is_returned_as_an_error_reply(sheet):
+def test_google_failure_is_published_as_a_failure_event(sheet):
     sheet.worksheet.get_all_values.side_effect = RuntimeError("quota exceeded")
     bus = object()
     request = make_request()
 
     consumer.handle_request(request, bus)
 
-    sheet.reply.assert_called_once_with(bus, request, error="quota exceeded")
+    sheet.failure.assert_called_once()
+    assert str(sheet.failure.call_args.args[2]) == "quota exceeded"
     sheet.publish.assert_not_called()
 
 
-def test_authentication_failure_is_returned_as_an_error_reply(sheet):
+def test_authentication_failure_is_published_as_a_failure_event(sheet):
     error = ReferenceAuthenticationError("Google OAuth authorization failed")
     sheet.credentials.side_effect = error
     bus = object()
@@ -154,9 +155,8 @@ def test_authentication_failure_is_returned_as_an_error_reply(sheet):
 
     consumer.handle_request(request, bus)
 
-    sheet.reply.assert_called_once_with(
-        bus, request, error="Google OAuth authorization failed"
-    )
+    sheet.failure.assert_called_once()
+    assert str(sheet.failure.call_args.args[2]) == "Google OAuth authorization failed"
 
 
 def test_invalid_spreadsheet_url_is_returned_as_an_error_reply(sheet, monkeypatch):
@@ -165,7 +165,17 @@ def test_invalid_spreadsheet_url_is_returned_as_an_error_reply(sheet, monkeypatc
 
     consumer.handle_request(make_request(), object())
 
-    assert "spreadsheet ID" in sheet.reply.call_args.kwargs["error"]
+    assert "spreadsheet ID" in str(sheet.failure.call_args.args[2])
+    sheet.credentials.assert_not_called()
+
+
+def test_unexpected_command_is_reported_without_google_access(sheet):
+    request = Envelope.create("unsupported", {}, correlation_id="bad-ref-event")
+
+    consumer.handle_request(request, object())
+
+    assert "Unsupported reference command" in str(sheet.failure.call_args.args[2])
+    assert sheet.failure.call_args.args[3] == "bad-ref-event"
     sheet.credentials.assert_not_called()
 
 
@@ -180,7 +190,7 @@ def test_main_runs_the_reference_downloader_worker(monkeypatch):
     args, kwargs = run_consumer.call_args
     assert args[:3] == (
         "localhost:9092",
-        REFERENCE_DOWNLOAD_REQUESTS,
+        [REFERENCE_SYNC_REQUESTS, REFERENCE_PIPELINE_COMPLETED],
         "reference-downloader-service",
     )
     assert args[3].func is consumer.handle_request
@@ -188,21 +198,71 @@ def test_main_runs_the_reference_downloader_worker(monkeypatch):
     assert kwargs == {"service_name": "downloader_reference"}
 
 
-def test_publish_reference_csv_sends_compressed_content(monkeypatch):
-    publish_reply = Mock()
-    monkeypatch.setattr(producer, "publish_reply", publish_reply)
-    bus = object()
+def test_publisher_skips_identical_reference_bytes():
+    bus = Mock()
+    digest = hashlib.sha256(b"same bytes").hexdigest()
+    previous = Envelope.create("reference_snapshot_state", {"sha256": digest})
+    bus.read_latest.return_value = previous
     request = make_request()
 
-    producer.publish_reference_csv(bus, request, b"a,b\n1,2\n")
+    changed = producer.publish_reference_if_changed(bus, request, b"same bytes")
 
-    args = publish_reply.call_args.args
-    assert args[:2] == (bus, request)
-    assert decode_bytes(args[2]["csv_gzip_base64"]) == b"a,b\n1,2\n"
+    assert changed is False
+    bus.publish.assert_not_called()
 
 
-def test_response_topic_is_the_reference_download_topic():
-    assert producer.response_topic() == REFERENCE_DOWNLOAD_RESPONSES
+def test_publisher_emits_changed_snapshot_and_advances_state():
+    bus = Mock()
+    bus.read_latest.return_value = None
+    request = make_request()
+
+    changed = producer.publish_reference_if_changed(bus, request, b"new bytes")
+
+    assert changed is True
+    bus.publish.assert_called_once()
+    assert bus.publish.call_args.args[0] == REFERENCE_DOWNLOADS
+    snapshot_event = bus.publish.call_args.args[1]
+    assert snapshot_event.correlation_id == request.correlation_id
+    assert (
+        decode_bytes(snapshot_event.payload["reference_csv_gzip_base64"])
+        == b"new bytes"
+    )
+    bus.read_latest.assert_called_once_with(REFERENCE_SNAPSHOT_STATE)
+
+
+def test_checkpoint_persists_the_digest_after_pipeline_completion():
+    bus = Mock()
+    completion = Envelope.create(
+        "pipeline_completed",
+        {"reference_sha256": "digest"},
+        correlation_id="completed-run",
+    )
+
+    producer.checkpoint_completed_reference(bus, completion)
+
+    bus.publish.assert_called_once()
+    topic, state = bus.publish.call_args.args
+    assert topic == REFERENCE_SNAPSHOT_STATE
+    assert bus.publish.call_args.kwargs == {"key": "reference-snapshot"}
+    assert state.payload == {"sha256": "digest"}
+    assert state.correlation_id == "completed-run"
+
+
+def test_pipeline_completion_is_checkpointed_without_loading_google_credentials(
+    sheet,
+):
+    bus = object()
+    completion = Envelope.create(
+        "pipeline_completed",
+        {"reference_sha256": "digest"},
+        correlation_id="completed-run",
+    )
+
+    consumer.handle_request(completion, bus)
+
+    sheet.checkpoint.assert_called_once_with(bus, completion)
+    sheet.credentials.assert_not_called()
+    sheet.publish.assert_not_called()
 
 
 def test_auth_cli_runs_the_oauth_flow_once_for_the_configured_files(monkeypatch):

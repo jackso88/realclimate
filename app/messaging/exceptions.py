@@ -11,3 +11,7 @@ class RequestTimeoutError(MessagingError):
 
 class RemoteServiceError(MessagingError):
     """Raised when a remote service returns a failed response envelope."""
+
+
+class RetryableMessageError(MessagingError):
+    """Raised when a consumed record must remain uncommitted for retry."""

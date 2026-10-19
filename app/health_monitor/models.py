@@ -1,6 +1,9 @@
 """Data transfer objects for health monitoring."""
 
-from typing import ClassVar, Literal
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+
 
 from pydantic import (
     BaseModel,
@@ -10,6 +13,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from typing import ClassVar
 
 
 class HealthMonitorSettings(BaseModel):
@@ -88,7 +92,6 @@ class HealthMonitorEnvironment(BaseModel):
         "downloader_current",
         "downloader_reference",
         "core",
-        "orchestrator",
         "uploader",
         "scheduler",
         "notifications",

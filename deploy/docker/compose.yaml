@@ -83,19 +83,14 @@ services:
         create_topic() {
           /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --command-config /tmp/kafka-client.properties --create --if-not-exists --partitions 1 --replication-factor 1 "$@"
         }
-        create_topic --topic orchestrator.runs
-        create_topic --topic orchestrator.run.responses
-        create_topic --topic orchestrator.uploader.responses
-        create_topic --topic core.process.requests
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --command-config /tmp/kafka-client.properties --create --if-not-exists --partitions 3 --replication-factor 1 --topic core.process.results
-        create_topic --topic downloader.current.requests
-        create_topic --topic downloader.current.responses
-        create_topic --topic downloader.reference.requests
-        create_topic --topic downloader.reference.responses
-        create_topic --topic admin_auth.requests
-        create_topic --topic admin_auth.current.responses
-        create_topic --topic admin_auth.uploader.responses
-        create_topic --topic uploader.requests
+        create_topic --topic reference.sync.requests
+        create_topic --topic downloader.reference.completed
+        create_topic --topic reference.pipeline.completed
+        create_topic --topic downloader.current.completed
+        create_topic --topic admin-auth.requests
+        create_topic --topic admin-auth.current.responses
+        create_topic --topic admin-auth.uploader.responses
         create_topic --topic notifications
         create_topic --topic health.heartbeats
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
@@ -104,7 +99,7 @@ services:
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --command-config /tmp/kafka-client.properties \
-          --create --if-not-exists --topic orchestrator.reference.fingerprint.state \
+          --create --if-not-exists --topic reference.snapshot.state \
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
     volumes:
       - *kafka_ca_volume
@@ -181,28 +176,37 @@ services:
     environment:
       <<: *common_env
       EXCLUDED_CSV_PATH: /app/storage/outputs/for_zalivka_excluded.csv
+      CORE_PENDING_REDIS_URL: redis://redis:6379/0
+      CORE_PENDING_INPUT_TTL_SECONDS: ${CORE_PENDING_INPUT_TTL_SECONDS:-86400}
+      CORE_PROCESSING_CLAIM_TTL_SECONDS: ${CORE_PROCESSING_CLAIM_TTL_SECONDS:-7200}
     volumes:
       - *kafka_ca_volume
       - ../../storage/outputs:/app/storage/outputs
     depends_on:
       kafka_init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
     restart: unless-stopped
 
-  orchestrator:
-    build: *app_build
-    command: ["python", "-m", "app.orchestrator.consumer"]
-    environment:
-      <<: *common_env
-      DOWNLOAD_TIMEOUT_SECONDS: ${DOWNLOAD_TIMEOUT_SECONDS:-900}
-      IMPORT_TIMEOUT_SECONDS: ${IMPORT_TIMEOUT_SECONDS:-1800}
+  redis:
+    image: redis:7.4-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --save
+      - "60"
+      - "1000"
+      - --maxmemory-policy
+      - noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     volumes:
-      - *kafka_ca_volume
-    depends_on:
-      kafka_init: {condition: service_completed_successfully}
-      downloader_current: {condition: service_started}
-      downloader_reference: {condition: service_started}
-      core: {condition: service_started}
-      uploader: {condition: service_started}
+      - redis_data:/data
     restart: unless-stopped
 
   uploader:
@@ -226,10 +230,8 @@ services:
     environment:
       <<: *common_env
       SCHEDULE_TIMEZONE: ${SCHEDULE_TIMEZONE:-Europe/Minsk}
-      ORCHESTRATOR_RUN_TIMEOUT_SECONDS: ${ORCHESTRATOR_RUN_TIMEOUT_SECONDS:-5400}
     depends_on:
       kafka_init: {condition: service_completed_successfully}
-      orchestrator: {condition: service_started}
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume
@@ -269,3 +271,4 @@ volumes:
   kafka_data:
   kafka_server_certs:
   kafka_client_certs:
+  redis_data:

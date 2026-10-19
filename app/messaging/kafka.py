@@ -2,7 +2,7 @@
 
 import logging
 import re
-from time import monotonic
+from time import monotonic, sleep
 from typing import TYPE_CHECKING, Callable
 from uuid import uuid4
 
@@ -10,8 +10,12 @@ if TYPE_CHECKING:
     from confluent_kafka import Consumer, Producer
 
 from app.messaging.config import load_client_settings
-from app.messaging.exceptions import RemoteServiceError, RequestTimeoutError
-from app.messaging.models import Envelope
+from app.messaging.exceptions import (
+    RemoteServiceError,
+    RetryableMessageError,
+    RequestTimeoutError,
+)
+from app.contracts.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
 
 logger = logging.getLogger(__name__)
@@ -20,6 +24,7 @@ TELEGRAM_BOT_TOKEN = re.compile(r"(?i)\b(bot)\d+:[A-Za-z0-9_-]+")
 # How long a consumer may go without polling before Kafka evicts it from the
 # group. A worker whose handler can run longer than this must raise it.
 DEFAULT_MAX_POLL_INTERVAL_MS = 3_600_000
+HANDLER_RETRY_BACKOFF_SECONDS = 1.0
 
 
 def sanitize_error(message: str) -> str:
@@ -216,7 +221,7 @@ class KafkaBus:
 
 def run_consumer(
     bootstrap_servers: str,
-    topic: str,
+    topic: str | list[str],
     group_id: str,
     handler: Callable[[Envelope, KafkaBus], None],
     *,
@@ -227,7 +232,7 @@ def run_consumer(
 
     Args:
         bootstrap_servers: Comma-separated Kafka broker addresses.
-        topic: Topic to subscribe to.
+        topic: Topic or topic list to subscribe to.
         group_id: Consumer group identifier shared by this worker's instances.
         handler: Callback invoked with each decoded envelope and the producer
             bus used for replies.
@@ -238,15 +243,15 @@ def run_consumer(
             before Kafka considers the consumer dead and reassigns its
             partitions. Must exceed the handler's worst-case duration.
 
-    This function runs until interrupted. Handler exceptions are logged and
-    the corresponding record is still committed, so the worker does not retry
-    that record automatically.
+    This function runs until interrupted. Records are committed after a
+    successful handler or a non-retryable handler failure. A handler can raise
+    :class:`RetryableMessageError` to seek back to its record and retry it.
 
     Raises:
         RuntimeError: If Kafka returns a non-EOF consumer error.
         KafkaException: If a consumer cannot be created or subscribed.
     """
-    from confluent_kafka import Consumer, KafkaError
+    from confluent_kafka import Consumer, KafkaError, TopicPartition
 
     bus = KafkaBus(bootstrap_servers)
     consumer = Consumer(
@@ -259,8 +264,9 @@ def run_consumer(
             "max.poll.interval.ms": max_poll_interval_ms,
         }
     )
-    consumer.subscribe([topic])
-    logger.info("Kafka consumer subscribed to %s", topic)
+    topics = [topic] if isinstance(topic, str) else topic
+    consumer.subscribe(topics)
+    logger.info("Kafka consumer subscribed to %s", ", ".join(topics))
     heartbeat_reporter = None
     if service_name:
         from app.messaging.health import HeartbeatReporter
@@ -280,14 +286,33 @@ def run_consumer(
             envelope = Envelope.decode(kafka_message.value())
             if heartbeat_reporter:
                 heartbeat_reporter.mark_busy()
+            marked_idle = False
             try:
                 handler(envelope, bus)
+            except RetryableMessageError:
+                logger.exception("Unhandled message failure on topic(s) %s", topics)
+                consumer.seek(
+                    TopicPartition(
+                        kafka_message.topic(),
+                        kafka_message.partition(),
+                        kafka_message.offset(),
+                    )
+                )
+                sleep(HANDLER_RETRY_BACKOFF_SECONDS)
             except Exception:
-                logger.exception("Unhandled message failure on topic %s", topic)
-            finally:
+                logger.exception("Unhandled message failure on topic(s) %s", topics)
                 if heartbeat_reporter:
                     heartbeat_reporter.mark_idle()
+                    marked_idle = True
                 consumer.commit(message=kafka_message, asynchronous=False)
+            else:
+                if heartbeat_reporter:
+                    heartbeat_reporter.mark_idle()
+                    marked_idle = True
+                consumer.commit(message=kafka_message, asynchronous=False)
+            finally:
+                if heartbeat_reporter and not marked_idle:
+                    heartbeat_reporter.mark_idle()
     finally:
         if heartbeat_reporter:
             heartbeat_reporter.stop()
@@ -323,6 +348,7 @@ def publish_failure(
     bus: KafkaBus,
     service: str,
     error: Exception,
+    correlation_id: str | None = None,
 ) -> None:
     """Publish a redacted service failure to the notification topic.
 
@@ -330,10 +356,16 @@ def publish_failure(
         bus: Kafka bus used to publish the notification.
         service: Name of the worker that failed.
         error: Exception whose type and sanitized message will be reported.
+        correlation_id: Optional pipeline ID used to trace a failure across
+            the event chain.
     """
     payload = {
         "service": service,
         "error_type": type(error).__name__,
         "error": sanitize_error(str(error)),
     }
-    bus.publish(CORE_NOTIFICATIONS, Envelope.create("failure", payload))
+    bus.publish(
+        CORE_NOTIFICATIONS,
+        Envelope.create("failure", payload, correlation_id=correlation_id),
+        key=correlation_id,
+    )

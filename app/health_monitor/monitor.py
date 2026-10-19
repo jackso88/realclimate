@@ -8,10 +8,14 @@ from typing import Callable
 from confluent_kafka import Consumer, KafkaError
 from confluent_kafka.admin import AdminClient
 
-from app.health_monitor.models import STUCK, HealthMonitorSettings, ServiceTransition
+from app.health_monitor.models import (
+    STUCK,
+    HealthMonitorSettings,
+    ServiceTransition,
+)
 from app.messaging.config import load_client_settings
 from app.messaging.kafka import sanitize_error
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.topics import HEALTH_HEARTBEATS
 from app.notifications.telegram import send_telegram_message
 

@@ -5,35 +5,52 @@ from functools import partial
 
 import gspread
 
+from app.downloader.reference.google_oauth import (
+    get_credentials,
+    get_service_account_credentials,
+)
+from app.downloader.reference.exceptions import ReferenceAuthenticationError
+from app.downloader.reference.models import Settings
 from app.downloader.reference.config import (
     SCOPES,
     configure_logging,
     extract_spreadsheet_id,
     load_settings,
 )
-from app.downloader.reference.exceptions import ReferenceAuthenticationError
-from app.downloader.reference.google_oauth import (
-    get_credentials,
-    get_service_account_credentials,
+from app.downloader.reference.producer import (
+    checkpoint_completed_reference,
+    publish_reference_if_changed,
 )
-from app.downloader.reference.models import Settings
-from app.downloader.reference.producer import publish_reference_csv
 from app.downloader.reference.utils import serialize_data_to_csv
-from app.messaging.kafka import publish_reply, run_consumer
-from app.messaging.topics import REFERENCE_DOWNLOAD_REQUESTS
+from app.messaging.kafka import publish_failure, run_consumer
+from app.messaging.topics import (
+    REFERENCE_PIPELINE_COMPLETED,
+    REFERENCE_SYNC_REQUESTS,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def handle_request(message, bus, settings: Settings | None = None) -> None:
-    """Download the configured worksheet and reply with serialized CSV bytes.
+    """Download the configured worksheet and publish it only when changed.
 
     Args:
-        message: Kafka request envelope with correlation and reply metadata.
-        bus: Kafka bus used to publish success or failure responses.
+        message: Scheduled synchronization event carrying the pipeline ID.
+        bus: Kafka bus used to compare state and publish events.
         settings: Optional downloader settings injected once at worker startup.
     """
     try:
+        if message.command == "pipeline_completed":
+            checkpoint_completed_reference(bus, message)
+            logger.info(
+                "Checkpointed reference digest correlation_id=%s",
+                message.correlation_id,
+            )
+            return
+        if message.command != "sync_reference":
+            raise ValueError(f"Unsupported reference command: {message.command}")
+        if not message.correlation_id:
+            raise ValueError("Reference sync event is missing correlation_id")
         if settings is None:
             settings = load_settings()
         spreadsheet_id = extract_spreadsheet_id(settings.spreadsheet_url)
@@ -80,11 +97,18 @@ def handle_request(message, bus, settings: Settings | None = None) -> None:
             spreadsheet = gspread.authorize(credentials).open_by_key(spreadsheet_id)
         worksheet = spreadsheet.worksheet(settings.sheet_name)
         content = serialize_data_to_csv(worksheet.get_all_values())
-        publish_reference_csv(bus, message, content)
-        logger.info("Reference sheet downloaded into memory (%d bytes)", len(content))
+        changed = publish_reference_if_changed(bus, message, content)
+        if changed:
+            logger.info(
+                "Published changed reference snapshot (%d bytes, correlation_id=%s)",
+                len(content),
+                message.correlation_id,
+            )
+        else:
+            logger.info("Reference sheet is unchanged; downstream work skipped")
     except Exception as error:
         logger.exception("Reference spreadsheet download failed")
-        publish_reply(bus, message, error=str(error))
+        publish_failure(bus, "downloader_reference", error, message.correlation_id)
 
 
 def main() -> None:
@@ -93,7 +117,7 @@ def main() -> None:
     settings = load_settings()
     run_consumer(
         settings.bootstrap_servers,
-        REFERENCE_DOWNLOAD_REQUESTS,
+        [REFERENCE_SYNC_REQUESTS, REFERENCE_PIPELINE_COMPLETED],
         "reference-downloader-service",
         partial(handle_request, settings=settings),
         service_name="downloader_reference",

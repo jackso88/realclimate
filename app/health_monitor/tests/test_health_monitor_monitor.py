@@ -13,7 +13,7 @@ from app.health_monitor.monitor import (
     _send_transition,
     run_health_monitor,
 )
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.topics import HEALTH_HEARTBEATS
 
 

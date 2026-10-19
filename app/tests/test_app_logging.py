@@ -13,7 +13,6 @@ CONFIG_MODULES = [
     "app.downloader.reference.config",
     "app.health_monitor.config",
     "app.notifications.config",
-    "app.orchestrator.config",
     "app.scheduler.config",
     "app.uploader.config",
 ]

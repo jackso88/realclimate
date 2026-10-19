@@ -1,6 +1,6 @@
 """Tests for Kafka message serialization helpers."""
 
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.payloads import decode_bytes, encode_bytes
 
 

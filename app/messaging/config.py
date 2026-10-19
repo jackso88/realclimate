@@ -4,7 +4,8 @@ import os
 
 from pydantic import ValidationError
 
-from app.messaging.models import KafkaClientSettings, KafkaEnvironment
+from app.messaging.models import KafkaClientSettings
+from app.messaging.models import KafkaEnvironment
 
 
 def load_client_settings(bootstrap_servers: str) -> KafkaClientSettings:

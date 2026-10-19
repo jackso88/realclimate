@@ -1,13 +1,16 @@
-"""Tests for the core request/reply processing contract."""
+"""Tests for the core's two-event Redis pairing and processing contract."""
 
+from app.contracts.models import Envelope
 from app.core import consumer
-from app.core.models import CorePipelineOutput
-from app.messaging.models import Envelope
+from app.core.models import CorePipelineOutput, CoreSettings
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
     CORE_DUPLICATE_MAP_STATE,
     CORE_NOTIFICATIONS,
     CORE_PROCESS_RESULTS,
+    CURRENT_DOWNLOADS,
+    REFERENCE_DOWNLOADS,
+    REFERENCE_PIPELINE_COMPLETED,
 )
 
 
@@ -24,85 +27,173 @@ class FakeBus:
         self.published.append((topic, message, key))
 
 
-def test_core_processes_supplied_csv_and_publishes_result(monkeypatch, tmp_path):
-    reference_csv = b"reference"
-    current_csv = b"current"
-    output = CorePipelineOutput(
+class FakePendingInputs:
+    def __init__(self):
+        self.parts = {}
+        self.claimed = set()
+        self.completed = []
+        self.released = []
+        self.done = set()
+
+    def is_completed(self, correlation_id):
+        return correlation_id in self.done
+
+    def save_reference(self, correlation_id, content, sha256, claim_token):
+        self.parts.setdefault(correlation_id, {})["reference"] = (content, sha256)
+        return self._claim(correlation_id, claim_token)
+
+    def save_current(self, correlation_id, content, claim_token):
+        self.parts.setdefault(correlation_id, {})["current"] = content
+        return self._claim(correlation_id, claim_token)
+
+    def _claim(self, correlation_id, claim_token):
+        parts = self.parts[correlation_id]
+        if set(parts) != {"reference", "current"} or correlation_id in self.claimed:
+            return False
+        self.claimed.add(correlation_id)
+        self.tokens = getattr(self, "tokens", {})
+        self.tokens[correlation_id] = claim_token
+        return True
+
+    def get_pair(self, correlation_id):
+        reference, digest = self.parts[correlation_id]["reference"]
+        return reference, self.parts[correlation_id]["current"], digest
+
+    def complete(self, correlation_id, token):
+        self.completed.append(correlation_id)
+        assert self.tokens[correlation_id] == token
+        self.parts.pop(correlation_id)
+        self.claimed.discard(correlation_id)
+        self.done.add(correlation_id)
+        return True
+
+    def release(self, correlation_id, token):
+        self.released.append((correlation_id, token))
+        self.claimed.discard(correlation_id)
+
+
+def make_reference(correlation_id="pipeline-1", content=b"reference", digest="digest"):
+    return Envelope.create(
+        "reference_downloaded",
+        {
+            "reference_csv_gzip_base64": encode_bytes(content),
+            "reference_sha256": digest,
+        },
+        correlation_id=correlation_id,
+    )
+
+
+def make_current(correlation_id="pipeline-1", content=b"current"):
+    return Envelope.create(
+        "current_downloaded",
+        {"current_csv_gzip_base64": encode_bytes(content)},
+        correlation_id=correlation_id,
+    )
+
+
+def make_output(changes=None):
+    return CorePipelineOutput(
         processed_csv=b"processed",
         excluded_csv=b"excluded",
-        detailed_changes=["Added article X"],
+        detailed_changes=changes or [],
         updated_duplicate_map={("code", "model", 1): "code-D01"},
     )
-    process = lambda ref, cur, mapping: output
-    monkeypatch.setattr(consumer, "process_catalogue", process)
-    monkeypatch.setattr(
-        consumer, "encode_duplicate_map", lambda mapping: {"entries": []}
-    )
-    excluded_path = tmp_path / "excluded.csv"
-    monkeypatch.setenv("EXCLUDED_CSV_PATH", str(excluded_path))
-    bus = FakeBus()
-    reply = []
+
+
+def test_core_waits_for_both_correlated_events_and_processes_them(
+    monkeypatch, tmp_path
+):
+    received = []
     monkeypatch.setattr(
         consumer,
-        "publish_reply",
-        lambda _bus, _message, payload=None, error=None: reply.append((payload, error)),
-    )
-    monkeypatch.setattr(consumer, "publish_failure", lambda *_: None)
-    message = Envelope.create(
         "process_catalogue",
-        {
-            "reference_csv_gzip_base64": encode_bytes(reference_csv),
-            "current_csv_gzip_base64": encode_bytes(current_csv),
-            "reference_sha256": "digest",
-        },
-        correlation_id="test-run",
-        reply_to="core.process.results",
+        lambda reference, current, duplicate_map: (
+            received.append((reference, current, duplicate_map))
+            or make_output(["Added"])
+        ),
     )
-
-    consumer.handle_process(message, bus)
-
-    assert excluded_path.read_bytes() == b"excluded"
-    state_event = next(
-        event for event in bus.published if event[0] == CORE_DUPLICATE_MAP_STATE
-    )
-    result_event = next(
-        event for event in bus.published if event[0] == CORE_PROCESS_RESULTS
-    )
-    notification = next(
-        event for event in bus.published if event[0] == CORE_NOTIFICATIONS
-    )
-    assert state_event[2] == "duplicate-map"
-    assert result_event[1].payload["reference_sha256"] == "digest"
-    assert (
-        decode_bytes(result_event[1].payload["processed_csv_gzip_base64"])
-        == b"processed"
-    )
-    assert notification[1].payload["changes"] == ["Added article X"]
-    assert result_event[1].correlation_id == "test-run"
-    assert result_event[1].payload["changes_count"] == 1
-
-
-def test_core_does_not_publish_empty_change_notification(monkeypatch, tmp_path):
-    output = CorePipelineOutput(
-        processed_csv=b"processed",
-        excluded_csv=b"excluded",
-        detailed_changes=[],
-        updated_duplicate_map={},
-    )
-    monkeypatch.setattr(consumer, "process_catalogue", lambda *_: output)
     monkeypatch.setattr(consumer, "encode_duplicate_map", lambda _: {"entries": []})
-    monkeypatch.setenv("EXCLUDED_CSV_PATH", str(tmp_path / "excluded.csv"))
-    monkeypatch.setattr(consumer, "publish_reply", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(consumer, "publish_failure", lambda *_: None)
+    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
     bus = FakeBus()
-    message = Envelope.create(
-        "process_catalogue",
-        {
-            "reference_csv_gzip_base64": encode_bytes(b"ref"),
-            "current_csv_gzip_base64": encode_bytes(b"current"),
-        },
-    )
+    pending = FakePendingInputs()
 
-    consumer.handle_process(message, bus)
+    consumer.handle_process(make_reference(), bus, settings, pending)
+
+    assert received == []
+    assert bus.published == []
+
+    consumer.handle_process(make_current(), bus, settings, pending)
+
+    assert received == [(b"reference", b"current", consumer.DUPLICATE_CODE_MAP)]
+    assert (tmp_path / "excluded.csv").read_bytes() == b"excluded"
+    result = next(
+        event[1] for event in bus.published if event[0] == CORE_PROCESS_RESULTS
+    )
+    assert result.correlation_id == "pipeline-1"
+    assert result.payload["reference_sha256"] == "digest"
+    assert decode_bytes(result.payload["processed_csv_gzip_base64"]) == b"processed"
+    assert pending.completed == ["pipeline-1"]
+    assert "pipeline-1" not in pending.parts
+
+
+def test_core_processes_inputs_when_current_arrives_first(monkeypatch, tmp_path):
+    processed = []
+    monkeypatch.setattr(
+        consumer,
+        "process_catalogue",
+        lambda reference, current, mapping: processed.append((reference, current))
+        or make_output(),
+    )
+    monkeypatch.setattr(consumer, "encode_duplicate_map", lambda _: {"entries": []})
+    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
+    bus = FakeBus()
+    pending = FakePendingInputs()
+
+    consumer.handle_process(make_current(), bus, settings, pending)
+    assert processed == []
+    consumer.handle_process(make_reference(), bus, settings, pending)
+
+    assert processed == [(b"reference", b"current")]
+    assert pending.completed == ["pipeline-1"]
+
+
+def test_core_skips_uploader_and_completes_reference_without_changes(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(consumer, "process_catalogue", lambda *_: make_output())
+    monkeypatch.setattr(consumer, "encode_duplicate_map", lambda _: {"entries": []})
+    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
+    bus = FakeBus()
+    pending = FakePendingInputs()
+
+    consumer.handle_process(make_reference(), bus, settings, pending)
+    consumer.handle_process(make_current(), bus, settings, pending)
 
     assert all(topic != CORE_NOTIFICATIONS for topic, _, _ in bus.published)
+    result = next(
+        event[1] for event in bus.published if event[0] == CORE_PROCESS_RESULTS
+    )
+    assert result.payload["detailed_changes"] == []
+    assert "processed_csv_gzip_base64" not in result.payload
+    completion = next(
+        event[1] for event in bus.published if event[0] == REFERENCE_PIPELINE_COMPLETED
+    )
+    assert completion.payload == {"reference_sha256": "digest"}
+    assert completion.correlation_id == "pipeline-1"
+
+
+def test_core_consumer_subscribes_to_both_downloaders():
+    assert consumer.CORE_INPUT_TOPICS == [REFERENCE_DOWNLOADS, CURRENT_DOWNLOADS]
+
+
+def test_completed_duplicate_event_is_ignored(monkeypatch, tmp_path):
+    process = lambda *_: (_ for _ in ()).throw(AssertionError("must not reprocess"))
+    monkeypatch.setattr(consumer, "process_catalogue", process)
+    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
+    pending = FakePendingInputs()
+    pending.done.add("pipeline-1")
+
+    consumer.handle_process(make_reference(), FakeBus(), settings, pending)
+
+    assert "pipeline-1" not in pending.parts
+    assert pending.completed == []

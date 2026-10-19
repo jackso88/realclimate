@@ -6,8 +6,12 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from app.messaging import kafka
-from app.messaging.exceptions import RemoteServiceError, RequestTimeoutError
-from app.messaging.models import Envelope
+from app.messaging.exceptions import (
+    RemoteServiceError,
+    RequestTimeoutError,
+    RetryableMessageError,
+)
+from app.contracts.models import Envelope
 
 
 class FakeError:
@@ -36,6 +40,15 @@ class FakeMessage:
 
     def error(self):
         return self._error
+
+    def topic(self):
+        return "jobs"
+
+    def partition(self):
+        return 0
+
+    def offset(self):
+        return 4
 
 
 class FakeProducer:
@@ -67,6 +80,7 @@ class FakeConsumer:
         self.subscriptions = []
         self.assignments = []
         self.commits = []
+        self.seeks = []
         self.closed = False
 
     def subscribe(self, topics):
@@ -91,6 +105,9 @@ class FakeConsumer:
 
     def commit(self, **kwargs):
         self.commits.append(kwargs)
+
+    def seek(self, partition):
+        self.seeks.append(partition)
 
     def close(self):
         self.closed = True
@@ -326,6 +343,24 @@ def test_publish_failure_sends_sanitized_notification(kafka_clients):
     }
 
 
+def test_publish_failure_preserves_pipeline_correlation(kafka_clients):
+    producer, _ = kafka_clients
+    bus = kafka.KafkaBus("broker:9093")
+
+    kafka.publish_failure(
+        bus,
+        "worker",
+        RuntimeError("failed"),
+        correlation_id="pipeline-7",
+    )
+
+    topic, record = producer.produced[0]
+    notification = Envelope.decode(record["value"])
+    assert topic == kafka.CORE_NOTIFICATIONS
+    assert record["key"] == b"pipeline-7"
+    assert notification.correlation_id == "pipeline-7"
+
+
 def test_run_consumer_dispatches_commits_and_closes_on_shutdown(
     kafka_clients, monkeypatch
 ):
@@ -353,7 +388,30 @@ def test_run_consumer_dispatches_commits_and_closes_on_shutdown(
     assert consumer.closed
 
 
-def test_run_consumer_commits_message_when_handler_fails(kafka_clients, monkeypatch):
+def test_run_consumer_subscribes_to_multiple_topics(kafka_clients, monkeypatch):
+    _, consumers = kafka_clients
+    consumer = FakeConsumer(
+        {},
+        messages=[FakeMessage(Envelope.create("change").encode()), KeyboardInterrupt()],
+    )
+    monkeypatch.setattr(
+        sys.modules["confluent_kafka"], "Consumer", lambda _config: consumer
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        kafka.run_consumer(
+            "broker:9093",
+            ["downloader.reference.completed", "downloader.current.completed"],
+            "core-worker",
+            lambda _envelope, _bus: None,
+        )
+
+    assert consumer.subscriptions == [
+        ["downloader.reference.completed", "downloader.current.completed"]
+    ]
+
+
+def test_run_consumer_commits_non_retryable_handler_failure(kafka_clients, monkeypatch):
     _, consumers = kafka_clients
     message = Envelope.create("run")
     consumer = FakeConsumer(
@@ -370,6 +428,29 @@ def test_run_consumer_commits_message_when_handler_fails(kafka_clients, monkeypa
         kafka.run_consumer("broker:9093", "jobs", "worker", handler)
 
     assert len(consumer.commits) == 1
+    assert consumer.seeks == []
+    assert consumer.closed
+
+
+def test_run_consumer_reseeks_retryable_handler_failure(kafka_clients, monkeypatch):
+    _, consumers = kafka_clients
+    message = Envelope.create("run")
+    consumer = FakeConsumer(
+        {}, messages=[FakeMessage(message.encode()), KeyboardInterrupt()]
+    )
+    monkeypatch.setattr(
+        sys.modules["confluent_kafka"], "Consumer", lambda _config: consumer
+    )
+    monkeypatch.setattr(kafka, "sleep", lambda _seconds: None)
+
+    def handler(_envelope, _bus):
+        raise RetryableMessageError("redis unavailable")
+
+    with pytest.raises(KeyboardInterrupt):
+        kafka.run_consumer("broker:9093", "jobs", "worker", handler)
+
+    assert consumer.commits == []
+    assert consumer.seeks == [("jobs", 0, 4)]
     assert consumer.closed
 
 

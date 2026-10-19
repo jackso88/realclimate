@@ -37,26 +37,25 @@ The default level is INFO; pass `logging.DEBUG` to that service's
 
 ## Change-driven workflow
 
-The scheduler starts the workflow orchestrator. It downloads the reference
-spreadsheet first and compares its SHA-256 digest with the last successfully
-processed digest stored in the compacted Kafka topic
-`orchestrator.reference.fingerprint.state`. If the reference data is unchanged,
-current-catalogue download, core processing, and upload are skipped. When it
-changes, the orchestrator requests current data and sends both CSV payloads to
-core. Core only processes supplied data; it returns the processed CSV and
-change report as a `catalogue_processed` event on `core.process.results`. That
-same result is the request reply, so a future analytics consumer can subscribe
-with its own Kafka group without duplicating the large payload. The uploader runs only
-when the change report is non-empty. The reference digest is checkpointed after
-all required work succeeds, so a failed run can retry on the next schedule.
-
-A run handles one Kafka message and does not poll while it works, so the
-orchestrator sets its consumer's `max.poll.interval.ms` from its own timeouts:
-three `DOWNLOAD_TIMEOUT_SECONDS` plus `IMPORT_TIMEOUT_SECONDS`, plus ten minutes
-(5 100 000 ms with the defaults). Without that, a run in which every step used
-its full timeout would outlast Kafka's one-hour default, get the consumer
-evicted from its group, and could be started a second time. Keep
-`ORCHESTRATOR_RUN_TIMEOUT_SECONDS` above that worst case as well.
+The scheduler publishes a `sync_reference` event once an hour during working
+hours. The reference downloader reads the spreadsheet and compares its SHA-256
+digest with the compacted Kafka state topic `reference.snapshot.state`. If the
+bytes changed, it publishes a separate `reference_downloaded` event to
+`downloader.reference.completed`; otherwise, the chain stops. The current
+downloader subscribes to that event, downloads the CMS export, and publishes
+only its own CSV in a `current_downloaded` event to
+`downloader.current.completed`. Core subscribes to both downloader topics and
+uses Redis to pair the two payloads by the scheduler's `correlation_id`. It
+processes the pair and publishes `catalogue_processed` to
+`core.process.results`. The uploader subscribes to core results and imports
+only messages with detailed changes. The same `correlation_id` is preserved
+through the pipeline and included in failure notifications. Each service can
+have multiple instances in its own consumer group; Kafka delivers each event
+to one instance per service.
+The reference fingerprint is checkpointed only after core reports no changes
+or uploader confirms a successful import. If a downstream step fails, the next
+scheduled sync retries the pipeline even when the spreadsheet bytes are still
+the same.
 
 ## Kafka deployment
 
@@ -115,7 +114,7 @@ but not that it is working: a worker blocked on one message would keep sending
 it. Each heartbeat therefore also reports how long the worker has been busy
 with its current message, and the monitor sends a "stuck" alert (and a follow-up
 when the worker recovers) once that time passes `HEALTH_MAX_BUSY_SECONDS`
-(default 5400, above the orchestrator's 4500-second worst case). Services that
+(default 5400). Set it above the longest expected operation. Services that
 should answer faster can get their own limit, for example
 `HEALTH_MAX_BUSY_OVERRIDES=core=600,notifications=120`; an unknown service name
 is rejected at startup.
@@ -132,13 +131,22 @@ commas. Delivery errors are logged without the bot token, which `requests` would
 otherwise print as part of the API URL.
 
 The scheduler runs at the start of each hour from 09:00 through 17:00 Monday to
-Friday in `Europe/Minsk`. The orchestrator downloads the reference spreadsheet
-first and skips the rest of the workflow when its contents have not changed.
-After a reference change, it downloads current catalogue data and asks core to
-process both inputs; the uploader imports the result only when core reports
-changes. Core persists only `storage/outputs/for_zalivka_excluded.csv`. Kafka
-retains queue messages for one hour and keeps the duplicate-code mapping in a
-compacted state topic across core container restarts.
+Friday in `Europe/Minsk`. The event chain skips current download, core
+processing, and upload when the reference bytes have not changed. Core persists
+only `storage/outputs/for_zalivka_excluded.csv`. Kafka retains event messages
+for one hour and keeps reference fingerprints and duplicate-code mappings in
+compacted state topics across container restarts. Redis stores incomplete core
+input pairs under their `correlation_id` for up to 24 hours by default, and
+removes a pair after successful processing. A completion marker with the same
+TTL makes Kafka redelivery of already completed input a no-op. Its AOF
+persistence and Docker volume preserve pending pairs across Redis container
+restarts. The default `CORE_PENDING_INPUT_TTL_SECONDS` and
+`CORE_PROCESSING_CLAIM_TTL_SECONDS` values
+are 86400 and 7200 seconds; `noeviction` is configured so Redis does not evict
+pending inputs under memory pressure. Core seeks and retries Kafka records when
+Redis is unavailable, and commits after the Redis operation succeeds. Other
+processing failures are reported and committed so malformed or unprocessable
+records do not block that consumer partition indefinitely.
 Set `GOOGLE_AUTH_MODE=user` to keep using the existing OAuth flow. Its client
 secret and persisted refresh token are stored under
 `app/downloader/reference/credentials/`; run

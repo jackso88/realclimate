@@ -6,10 +6,10 @@ from functools import partial
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from app.scheduler.config import configure_logging, load_settings
 from app.messaging.health import HeartbeatReporter
 from app.messaging.kafka import KafkaBus
-from app.scheduler.config import configure_logging, load_settings
-from app.scheduler.producer import publish_workflow_run
+from app.scheduler.producer import publish_reference_sync
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,10 @@ def main() -> None:
     configure_logging()
     settings = load_settings()
     timezone = settings.timezone
-    workflow_job = partial(publish_workflow_run, settings=settings)
+    sync_job = partial(publish_reference_sync, settings=settings)
     scheduler = BlockingScheduler(timezone=timezone)
     scheduler.add_job(
-        workflow_job,
+        sync_job,
         CronTrigger(day_of_week="mon-fri", hour="9-17", minute=0, timezone=timezone),
         id="hourly-catalogue-run",
         max_instances=1,

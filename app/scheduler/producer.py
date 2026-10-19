@@ -1,40 +1,39 @@
-"""Publish scheduled workflow requests to Kafka."""
+"""Publish scheduled reference synchronization events to Kafka."""
 
 import logging
+from uuid import uuid4
 
 from app.messaging.kafka import KafkaBus
-from app.messaging.topics import ORCHESTRATOR_RUN_RESPONSES, ORCHESTRATOR_RUNS
+from app.contracts.models import Envelope
+from app.messaging.topics import REFERENCE_SYNC_REQUESTS
 from app.scheduler.config import load_settings
 from app.scheduler.models import SchedulerSettings
 
 logger = logging.getLogger(__name__)
 
 
-def publish_workflow_run(settings: SchedulerSettings | None = None) -> None:
-    """Start a workflow, reusing scheduler settings when provided.
+def publish_reference_sync(settings: SchedulerSettings | None = None) -> str:
+    """Publish a reference synchronization request for the scheduled run.
 
     Args:
-        settings: Settings loaded at daemon startup. Direct calls load the
-            configuration on demand.
+        settings: Scheduler settings loaded at daemon startup. Direct calls
+            load configuration on demand.
+
+    Returns:
+        The correlation ID assigned to this synchronization pipeline.
     """
     if settings is None:
         settings = load_settings()
     bus = KafkaBus(settings.bootstrap_servers)
-    logger.info("Starting scheduled catalogue workflow")
-    response = bus.request(
-        ORCHESTRATOR_RUNS,
-        ORCHESTRATOR_RUN_RESPONSES,
-        "run_workflow",
-        {"source": "scheduler"},
-        timeout=settings.orchestrator_timeout_seconds,
-        response_group="scheduler-orchestrator-rpc",
+    correlation_id = str(uuid4())
+    bus.publish(
+        REFERENCE_SYNC_REQUESTS,
+        Envelope.create(
+            "sync_reference",
+            {"source": "scheduler"},
+            correlation_id=correlation_id,
+        ),
+        key=correlation_id,
     )
-    result = response.payload or {}
-    logger.info(
-        "Scheduled catalogue workflow completed: status=%s, reason=%s, "
-        "changes=%s, uploaded=%s",
-        result.get("status", "unknown"),
-        result.get("reason", "none"),
-        result.get("changes_count", 0),
-        result.get("uploaded", False),
-    )
+    logger.info("Published reference sync request correlation_id=%s", correlation_id)
+    return correlation_id

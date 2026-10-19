@@ -1,25 +1,20 @@
-"""Tests for the uploader worker's failure path and process wiring."""
+"""Tests for uploader failures and consumer wiring."""
 
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.payloads import encode_bytes
-from app.messaging.topics import UPLOADER_REQUESTS
 from app.uploader import consumer
 from app.uploader.exceptions import ImportQueueError
 
 
 @pytest.fixture
 def steps(monkeypatch):
-    """Mock every CMS step so a test can make exactly one of them fail."""
-    parts = type("Steps", (), {})()
-    parts.reply = Mock()
-    parts.delete = Mock()
-    parts.upload = Mock()
-    parts.wait = Mock()
+    """Mock every CMS step and the service failure publisher."""
+    parts = SimpleNamespace(failure=Mock(), delete=Mock(), upload=Mock(), wait=Mock())
     monkeypatch.setattr(consumer, "load_settings", lambda: "settings")
     monkeypatch.setattr(consumer, "request_session", Mock(return_value="session"))
     monkeypatch.setattr(consumer, "upload_processed_content", parts.upload)
@@ -27,68 +22,64 @@ def steps(monkeypatch):
     monkeypatch.setattr(consumer, "start_product_import", Mock())
     monkeypatch.setattr(consumer, "wait_for_import_completion", parts.wait)
     monkeypatch.setattr(consumer, "delete_uploaded_file", parts.delete)
-    monkeypatch.setattr(consumer, "publish_reply", parts.reply)
+    monkeypatch.setattr(consumer, "publish_failure", parts.failure)
     return parts
 
 
-def make_request(**payload):
-    payload.setdefault("csv_gzip_base64", encode_bytes(b"csv"))
-    return Envelope.create("import_processed_csv", payload, reply_to="responses")
+def make_result(**payload):
+    payload.setdefault("detailed_changes", ["price changed"])
+    payload.setdefault("processed_csv_gzip_base64", encode_bytes(b"csv"))
+    return Envelope.create("catalogue_processed", payload, correlation_id="pipeline-1")
 
 
-def test_failed_import_is_reported_to_the_requester(steps):
+def test_failed_import_is_reported_as_a_service_failure(steps):
     steps.wait.side_effect = ImportQueueError("Import task #9 failed")
     bus = object()
-    request = make_request()
 
-    consumer.handle_request(request, bus)
+    consumer.handle_processed_catalogue(make_result(), bus)
 
-    steps.reply.assert_called_once_with(bus, request, error="Import task #9 failed")
+    steps.failure.assert_called_once()
+    assert steps.failure.call_args.args[1] == "uploader"
+    assert str(steps.failure.call_args.args[2]) == "Import task #9 failed"
+    assert steps.failure.call_args.args[3] == "pipeline-1"
     steps.delete.assert_not_called()
 
 
-def test_failed_upload_stops_before_any_import_is_started(steps):
+def test_failed_upload_stops_before_import_and_notifies(steps):
     steps.upload.side_effect = RuntimeError("CMS unreachable")
+    bus = object()
 
-    consumer.handle_request(make_request(), object())
+    consumer.handle_processed_catalogue(make_result(), bus)
 
-    assert steps.reply.call_args.kwargs == {"error": "CMS unreachable"}
+    assert str(steps.failure.call_args.args[2]) == "CMS unreachable"
     steps.wait.assert_not_called()
 
 
-def test_request_without_a_payload_is_answered_with_an_error(steps):
-    request = Envelope.create("import_processed_csv", {}, reply_to="responses")
+def test_missing_processed_payload_is_reported(steps):
+    message = Envelope.create(
+        "catalogue_processed", {"detailed_changes": ["changed"]}, correlation_id="x"
+    )
 
-    consumer.handle_request(request, object())
+    consumer.handle_processed_catalogue(message, object())
 
-    assert "csv_gzip_base64" in steps.reply.call_args.kwargs["error"]
+    assert "processed_csv_gzip_base64" in str(steps.failure.call_args.args[2])
     steps.upload.assert_not_called()
 
 
-def test_filename_defaults_to_processed_csv(steps):
-    steps.upload.return_value = type("File", (), {"file_id": "1"})()
+def test_unexpected_core_event_is_reported_without_upload(steps):
+    message = Envelope.create("wrong_command", {}, correlation_id="bad-result")
+
+    consumer.handle_processed_catalogue(message, object())
+
+    assert "Unsupported uploader command" in str(steps.failure.call_args.args[2])
+    assert steps.failure.call_args.args[3] == "bad-result"
+    steps.upload.assert_not_called()
+
+
+def test_filename_is_fixed_to_the_processed_export(steps):
+    steps.upload.return_value = type("File", (), {"file_id": "id"})()
     steps.wait.return_value = type("Task", (), {"cron_num": 2})()
 
-    consumer.handle_request(make_request(), object())
+    consumer.handle_processed_catalogue(make_result(), object())
 
     assert steps.upload.call_args.args[3] == "processed.csv"
-
-
-def test_main_runs_the_uploader_worker(monkeypatch):
-    run_consumer = Mock()
-    settings = SimpleNamespace(bootstrap_servers="localhost:9092")
-    monkeypatch.setattr(consumer, "configure_logging", Mock())
-    monkeypatch.setattr(consumer, "run_consumer", run_consumer)
-    monkeypatch.setattr(
-        consumer,
-        "load_settings",
-        lambda: settings,
-    )
-
-    consumer.main()
-
-    args, kwargs = run_consumer.call_args
-    assert args[:3] == ("localhost:9092", UPLOADER_REQUESTS, "uploader-service")
-    assert args[3].func is consumer.handle_request
-    assert args[3].keywords == {"settings": settings}
-    assert kwargs == {"service_name": "uploader"}

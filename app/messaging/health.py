@@ -1,11 +1,11 @@
 """Heartbeat publishing helpers for long-running Kafka services."""
 
-import logging
-import time
 from datetime import datetime, timezone
+import logging
 from threading import Event, Lock, Thread
+import time
 
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.messaging.topics import HEALTH_HEARTBEATS
 
 logger = logging.getLogger(__name__)

@@ -2,7 +2,7 @@
 
 from app.health_monitor.monitor import HeartbeatTracker
 from app.messaging.health import publish_heartbeat
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 
 
 class RecordingBus:

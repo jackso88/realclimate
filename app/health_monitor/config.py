@@ -2,10 +2,11 @@
 
 import logging
 import os
-
 from pydantic import ValidationError
 
-from app.health_monitor.models import HealthMonitorEnvironment, HealthMonitorSettings
+from app.health_monitor.models import HealthMonitorEnvironment
+
+from app.health_monitor.models import HealthMonitorSettings
 
 
 def load_settings() -> HealthMonitorSettings:

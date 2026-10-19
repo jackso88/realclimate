@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from app.messaging.models import Envelope
+from app.contracts.models import Envelope
 from app.notifications.consumer import handle_notification
 
 
