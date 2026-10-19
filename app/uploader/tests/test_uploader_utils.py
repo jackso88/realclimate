@@ -123,15 +123,15 @@ def test_parse_import_queue_reads_numbers_and_statuses():
     html = queue_row(7, "Готово") + queue_row(8, "Выполняется")
 
     assert parse_import_queue(html) == [
-        ImportQueueItem(7, "Готово"),
-        ImportQueueItem(8, "Выполняется"),
+        ImportQueueItem(cron_num=7, status="Готово"),
+        ImportQueueItem(cron_num=8, status="Выполняется"),
     ]
 
 
 def test_parse_import_queue_accepts_numbers_without_a_hash_prefix():
     html = queue_row(7, "Готово").replace("#7", "7")
 
-    assert parse_import_queue(html) == [ImportQueueItem(7, "Готово")]
+    assert parse_import_queue(html) == [ImportQueueItem(cron_num=7, status="Готово")]
 
 
 def test_parse_import_queue_joins_status_fragments_from_nested_elements():
@@ -148,7 +148,7 @@ def test_parse_import_queue_skips_incomplete_and_malformed_rows():
         + queue_row(4, "Готово")
     )
 
-    assert parse_import_queue(html) == [ImportQueueItem(4, "Готово")]
+    assert parse_import_queue(html) == [ImportQueueItem(cron_num=4, status="Готово")]
 
 
 def test_latest_cron_num_is_the_highest_number():
@@ -164,7 +164,9 @@ def test_latest_cron_num_is_zero_for_an_empty_queue():
 def test_newest_task_after_returns_the_highest_newer_task():
     html = queue_row(5, "Готово") + queue_row(8, "Выполняется") + queue_row(7, "Ждёт")
 
-    assert newest_task_after(html, 5) == ImportQueueItem(8, "Выполняется")
+    assert newest_task_after(html, 5) == ImportQueueItem(
+        cron_num=8, status="Выполняется"
+    )
 
 
 def test_newest_task_after_ignores_tasks_at_or_below_the_baseline():
@@ -178,9 +180,9 @@ def test_newest_task_after_ignores_tasks_at_or_below_the_baseline():
 )
 def test_failure_statuses_raise(status):
     with pytest.raises(ImportQueueError, match="#7"):
-        ensure_import_succeeded(ImportQueueItem(7, status))
+        ensure_import_succeeded(ImportQueueItem(cron_num=7, status=status))
 
 
 @pytest.mark.parametrize("status", ["Готово", "В очереди", "Выполняется", ""])
 def test_non_failure_statuses_pass(status):
-    ensure_import_succeeded(ImportQueueItem(7, status))
+    ensure_import_succeeded(ImportQueueItem(cron_num=7, status=status))

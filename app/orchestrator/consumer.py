@@ -1,7 +1,7 @@
 """Kafka consumer for change-driven workflow requests."""
 
 import logging
-import os
+from functools import partial
 
 from app.messaging.kafka import (
     DEFAULT_MAX_POLL_INTERVAL_MS,
@@ -16,10 +16,8 @@ from app.orchestrator.runner import run_workflow
 
 logger = logging.getLogger(__name__)
 
+
 # Extra time on top of the worst-case run before Kafka may evict the consumer.
-POLL_INTERVAL_MARGIN_SECONDS = 600
-
-
 def max_poll_interval_ms(settings: OrchestratorSettings) -> int:
     """Return the poll interval this worker needs to survive a slow run.
 
@@ -34,19 +32,24 @@ def max_poll_interval_ms(settings: OrchestratorSettings) -> int:
         The worst-case run time plus a safety margin, in milliseconds, and never
         less than the library default.
     """
-    needed_seconds = settings.worst_case_run_seconds + POLL_INTERVAL_MARGIN_SECONDS
+    needed_seconds = (
+        settings.worst_case_run_seconds + settings.poll_interval_margin_seconds
+    )
     return max(DEFAULT_MAX_POLL_INTERVAL_MS, needed_seconds * 1000)
 
 
-def handle_run(message, bus) -> None:
+def handle_run(message, bus, settings: OrchestratorSettings | None = None) -> None:
     """Execute the workflow and return its outcome to the requester.
 
     Args:
         message: Request envelope containing reply metadata.
         bus: Kafka bus used by the workflow services and response publisher.
+        settings: Optional orchestrator settings injected once at worker startup.
     """
     try:
-        result = run_workflow(bus, load_settings())
+        if settings is None:
+            settings = load_settings()
+        result = run_workflow(bus, settings)
         logger.info(
             "Orchestrated workflow completed: status=%s, reason=%s, changes=%s, uploaded=%s",
             result.get("status", "unknown"),
@@ -70,13 +73,14 @@ def main() -> None:
             bad value stops it immediately instead of failing the first run.
     """
     configure_logging()
+    settings = load_settings()
     run_consumer(
-        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        settings.bootstrap_servers,
         ORCHESTRATOR_RUNS,
         "orchestrator-service",
-        handle_run,
+        partial(handle_run, settings=settings),
         service_name="orchestrator",
-        max_poll_interval_ms=max_poll_interval_ms(load_settings()),
+        max_poll_interval_ms=max_poll_interval_ms(settings),
     )
 
 

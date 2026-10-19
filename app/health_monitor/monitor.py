@@ -160,9 +160,11 @@ class HeartbeatTracker:
             previous = self.status[service]
             self.status[service] = available
             if previous is not None and previous != available:
-                transitions.append(ServiceTransition(service, available))
+                transitions.append(
+                    ServiceTransition(service=service, available=available)
+                )
             elif previous is None and not available:
-                transitions.append(ServiceTransition(service, False))
+                transitions.append(ServiceTransition(service=service, available=False))
 
             if not available:
                 # An outage is reported on its own; "stuck" only describes a
@@ -176,7 +178,7 @@ class HeartbeatTracker:
                 self.stuck[service] = is_stuck
                 transitions.append(
                     ServiceTransition(
-                        service,
+                        service=service,
                         available=not is_stuck,
                         kind=STUCK,
                         busy_seconds=busy,

@@ -46,7 +46,11 @@ def response(payload):
 
 
 def settings():
-    return OrchestratorSettings(30, 60, "test-orchestrator")
+    return OrchestratorSettings(
+        request_timeout_seconds=30,
+        uploader_timeout_seconds=60,
+        instance_id="test-orchestrator",
+    )
 
 
 def test_unchanged_reference_skips_current_core_and_uploader():

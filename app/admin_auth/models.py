@@ -1,37 +1,73 @@
 """DTOs for admin authentication requests and serializable sessions."""
 
-from dataclasses import dataclass
 from http.cookiejar import Cookie
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-@dataclass(frozen=True)
-class AdminSettings:
-    """Settings required to authenticate a CMS client session."""
+class AdminSettings(BaseModel):
+    """Validated settings required to authenticate a CMS client session.
 
-    base_url: str
-    cms_url: str
-    username: str
-    password: str
-    access: str
-    ver_id: int
-    design_id: int
-    session_cache_ttl_seconds: int = 14400
+    Args:
+        base_url: Public CMS origin used for login redirects.
+        cms_url: CMS API origin and base path.
+        username: CMS login name.
+        password: CMS password, excluded from object representations.
+        access: CMS access parameter.
+        ver_id: Positive CMS version identifier.
+        design_id: Positive CMS design identifier.
+        session_cache_ttl_seconds: Positive cache lifetime in seconds.
+        login_path: Relative CMS login endpoint.
+        mosaic_path: Relative CMS landing endpoint after login.
+        form_name: Login form name submitted to the CMS.
+        username_field: Login form field carrying the username.
+        password_field: Login form field carrying the password.
+        bootstrap_servers: Kafka broker addresses for the auth worker.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    base_url: str = Field(min_length=1)
+    cms_url: str = Field(min_length=1)
+    username: str = Field(min_length=1)
+    password: str = Field(repr=False, min_length=1)
+    access: str = Field(min_length=1)
+    ver_id: int = Field(gt=0)
+    design_id: int = Field(gt=0)
+    session_cache_ttl_seconds: int = Field(default=14400, gt=0)
     login_path: str = "/login"
     mosaic_path: str = "/mosaic"
     form_name: str = "login_form"
     username_field: str = "email"
     password_field: str = "password"
+    bootstrap_servers: str = Field(default="localhost:9092", min_length=1)
+
+    @field_validator("base_url", "cms_url")
+    @classmethod
+    def validate_http_url(cls, value: str) -> str:
+        """Require an absolute HTTP or HTTPS URL and remove trailing slashes."""
+        normalized = value.rstrip("/")
+        parsed = urlsplit(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("must be an absolute HTTP or HTTPS URL")
+        return normalized
 
 
-@dataclass(frozen=True)
-class SessionSnapshot:
-    """JSON-safe subset of a requests.Session needed by worker services."""
+class SessionSnapshot(BaseModel):
+    """Validated JSON-safe subset of a requests session.
 
-    cookies: list[dict[str, Any]]
-    headers: dict[str, str]
+    Args:
+        cookies: Cookie attributes required to restore the authenticated session.
+        headers: HTTP headers captured from the original session.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    cookies: list[dict[str, Any]] = Field(default_factory=list)
+    headers: dict[str, str] = Field(default_factory=dict)
 
     def to_payload(self) -> dict[str, Any]:
         """Convert the snapshot into a JSON-serializable Kafka payload.

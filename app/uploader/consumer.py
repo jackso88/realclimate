@@ -1,13 +1,14 @@
 """Kafka worker that uploads and imports processed CSV content."""
 
 import logging
-import os
+from functools import partial
 
 from app.admin_auth.producer import request_session
 from app.messaging.kafka import publish_reply, run_consumer
 from app.messaging.payloads import decode_bytes
 from app.messaging.topics import ADMIN_AUTH_UPLOADER_RESPONSES, UPLOADER_REQUESTS
 from app.uploader.config import configure_logging, load_settings
+from app.uploader.models import Settings
 from app.uploader.queue_processor import (
     delete_uploaded_file,
     get_latest_import_cron_num,
@@ -19,16 +20,18 @@ from app.uploader.queue_processor import (
 logger = logging.getLogger(__name__)
 
 
-def handle_request(message, bus) -> None:
+def handle_request(message, bus, settings: Settings | None = None) -> None:
     """Upload CSV content, wait for its import, delete it, and reply.
 
     Args:
         message: Kafka request envelope containing the compressed CSV payload,
             filename, correlation ID, and response topic.
         bus: Kafka bus used for session requests and the correlated reply.
+        settings: Optional uploader settings injected once at worker startup.
     """
     try:
-        settings = load_settings()
+        if settings is None:
+            settings = load_settings()
         content = decode_bytes(message.payload["csv_gzip_base64"])
         filename = message.payload.get("filename", "processed.csv")
         session = request_session(
@@ -66,11 +69,12 @@ def handle_request(message, bus) -> None:
 def main() -> None:
     """Run the uploader Kafka consumer."""
     configure_logging()
+    settings = load_settings()
     run_consumer(
-        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        settings.bootstrap_servers,
         UPLOADER_REQUESTS,
         "uploader-service",
-        handle_request,
+        partial(handle_request, settings=settings),
         service_name="uploader",
     )
 

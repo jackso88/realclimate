@@ -1,7 +1,7 @@
 """Kafka worker that fetches Google Sheets CSV content in memory."""
 
 import logging
-import os
+from functools import partial
 
 import gspread
 
@@ -10,6 +10,7 @@ from app.downloader.reference.google_oauth import (
     get_service_account_credentials,
 )
 from app.downloader.reference.exceptions import ReferenceAuthenticationError
+from app.downloader.reference.models import Settings
 from app.downloader.reference.config import (
     SCOPES,
     configure_logging,
@@ -24,15 +25,17 @@ from app.messaging.topics import REFERENCE_DOWNLOAD_REQUESTS
 logger = logging.getLogger(__name__)
 
 
-def handle_request(message, bus) -> None:
+def handle_request(message, bus, settings: Settings | None = None) -> None:
     """Download the configured worksheet and reply with serialized CSV bytes.
 
     Args:
         message: Kafka request envelope with correlation and reply metadata.
         bus: Kafka bus used to publish success or failure responses.
+        settings: Optional downloader settings injected once at worker startup.
     """
     try:
-        settings = load_settings()
+        if settings is None:
+            settings = load_settings()
         spreadsheet_id = extract_spreadsheet_id(settings.spreadsheet_url)
         if getattr(settings, "auth_mode", "user") == "service_account":
             credentials = get_service_account_credentials(
@@ -87,11 +90,12 @@ def handle_request(message, bus) -> None:
 def main() -> None:
     """Run the reference downloader Kafka consumer."""
     configure_logging()
+    settings = load_settings()
     run_consumer(
-        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        settings.bootstrap_servers,
         REFERENCE_DOWNLOAD_REQUESTS,
         "reference-downloader-service",
-        handle_request,
+        partial(handle_request, settings=settings),
         service_name="downloader_reference",
     )
 

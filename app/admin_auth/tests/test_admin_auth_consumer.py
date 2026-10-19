@@ -16,7 +16,7 @@ def test_requests_reuse_cached_snapshot(monkeypatch):
         ver_id=123,
         design_id=456,
     )
-    snapshot = SessionSnapshot([], {"X-Session": "cached"})
+    snapshot = SessionSnapshot(cookies=[], headers={"X-Session": "cached"})
     authenticate = Mock(return_value=snapshot)
     publish = Mock()
     bus = object()

@@ -1,10 +1,11 @@
 """Data transfer objects for health monitoring."""
 
-from dataclasses import dataclass, field
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
 
-@dataclass(frozen=True)
-class HealthMonitorSettings:
+class HealthMonitorSettings(BaseModel):
     """Runtime settings for heartbeat and Kafka availability monitoring.
 
     Args:
@@ -19,23 +20,25 @@ class HealthMonitorSettings:
             never finishes a message is alive, yet not doing its job.
         busy_limit_overrides: Per-service replacements for ``max_busy_seconds``,
             for example a short limit for a service that should answer fast.
+        max_busy_seconds: Positive upper bound for one worker operation.
     """
 
-    bootstrap_servers: str
-    monitored_services: tuple[str, ...]
-    heartbeat_timeout_seconds: int = 120
-    startup_grace_seconds: int = 180
-    check_interval_seconds: int = 10
-    max_busy_seconds: int = 5400
-    busy_limit_overrides: dict[str, int] = field(default_factory=dict)
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bootstrap_servers: str = Field(min_length=1)
+    monitored_services: tuple[str, ...] = Field(min_length=1)
+    heartbeat_timeout_seconds: int = Field(default=120, gt=0)
+    startup_grace_seconds: int = Field(default=180, gt=0)
+    check_interval_seconds: int = Field(default=10, gt=0)
+    max_busy_seconds: int = Field(default=5400, gt=0)
+    busy_limit_overrides: dict[str, PositiveInt] = Field(default_factory=dict)
 
 
 AVAILABILITY = "availability"
 STUCK = "stuck"
 
 
-@dataclass(frozen=True)
-class ServiceTransition:
+class ServiceTransition(BaseModel):
     """A change in a worker's health that deserves an alert.
 
     Args:
@@ -49,8 +52,10 @@ class ServiceTransition:
         limit_seconds: For ``"stuck"``, the limit that was exceeded.
     """
 
-    service: str
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    service: str = Field(min_length=1)
     available: bool
-    kind: str = AVAILABILITY
-    busy_seconds: float = 0.0
-    limit_seconds: int = 0
+    kind: Literal["availability", "stuck"] = AVAILABILITY
+    busy_seconds: float = Field(default=0.0, ge=0)
+    limit_seconds: int = Field(default=0, ge=0)

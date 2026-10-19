@@ -23,7 +23,9 @@ def test_cache_reuses_snapshot_until_ttl_expiration():
     now = [100.0]
     cache = SessionSnapshotCache(clock=lambda: now[0])
     settings = make_settings()
-    factory = lambda _settings: SessionSnapshot([], {"X-Session": "one"})
+    factory = lambda _settings: SessionSnapshot(
+        cookies=[], headers={"X-Session": "one"}
+    )
 
     first = cache.get(settings, factory)
     second = cache.get(settings, lambda _settings: pytest.fail("unexpected login"))
@@ -38,8 +40,8 @@ def test_cache_refreshes_when_auth_settings_change():
     cache = SessionSnapshotCache(clock=lambda: 5.0)
     first_settings = make_settings(username="first")
     second_settings = make_settings(username="second")
-    first_snapshot = SessionSnapshot([], {"X-Session": "first"})
-    second_snapshot = SessionSnapshot([], {"X-Session": "second"})
+    first_snapshot = SessionSnapshot(cookies=[], headers={"X-Session": "first"})
+    second_snapshot = SessionSnapshot(cookies=[], headers={"X-Session": "second"})
 
     assert cache.get(first_settings, lambda _: first_snapshot) is first_snapshot
     assert cache.get(second_settings, lambda _: second_snapshot) is second_snapshot
@@ -48,7 +50,7 @@ def test_cache_refreshes_when_auth_settings_change():
 def test_failed_authentication_is_not_cached_and_can_be_retried():
     cache = SessionSnapshotCache(clock=lambda: 1.0)
     settings = make_settings()
-    expected = SessionSnapshot([], {"X-Session": "valid"})
+    expected = SessionSnapshot(cookies=[], headers={"X-Session": "valid"})
     calls = 0
 
     def factory(_settings):
@@ -68,8 +70,8 @@ def test_failed_authentication_is_not_cached_and_can_be_retried():
 def test_clear_discards_cached_snapshot():
     cache = SessionSnapshotCache(clock=lambda: 1.0)
     settings = make_settings()
-    first = SessionSnapshot([], {"X-Session": "first"})
-    second = SessionSnapshot([], {"X-Session": "second"})
+    first = SessionSnapshot(cookies=[], headers={"X-Session": "first"})
+    second = SessionSnapshot(cookies=[], headers={"X-Session": "second"})
     cache.get(settings, lambda _: first)
     cache.clear()
 

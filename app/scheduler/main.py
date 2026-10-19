@@ -1,12 +1,12 @@
 """Weekday hourly daemon that triggers the catalogue workflow."""
 
 import logging
-import os
+from functools import partial
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.scheduler.config import configure_logging
+from app.scheduler.config import configure_logging, load_settings
 from app.messaging.health import HeartbeatReporter
 from app.messaging.kafka import KafkaBus
 from app.scheduler.producer import publish_workflow_run
@@ -21,10 +21,12 @@ def main() -> None:
     configured timezone. It allows one active run and coalesces missed runs.
     """
     configure_logging()
-    timezone = os.getenv("SCHEDULE_TIMEZONE", "Europe/Minsk")
+    settings = load_settings()
+    timezone = settings.timezone
+    workflow_job = partial(publish_workflow_run, settings=settings)
     scheduler = BlockingScheduler(timezone=timezone)
     scheduler.add_job(
-        publish_workflow_run,
+        workflow_job,
         CronTrigger(day_of_week="mon-fri", hour="9-17", minute=0, timezone=timezone),
         id="hourly-catalogue-run",
         max_instances=1,
@@ -32,7 +34,7 @@ def main() -> None:
         misfire_grace_time=300,
     )
     logger.info("Scheduler active: weekdays 09:00–17:00 (%s)", timezone)
-    bus = KafkaBus(os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
+    bus = KafkaBus(settings.bootstrap_servers)
     heartbeat = HeartbeatReporter(bus, "scheduler")
     heartbeat.start()
     try:

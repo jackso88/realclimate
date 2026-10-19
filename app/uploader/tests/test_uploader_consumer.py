@@ -11,8 +11,8 @@ from app.uploader.models import ImportQueueItem, UploadedFile
 def test_uploader_imports_supplied_processed_csv(monkeypatch):
     settings = object()
     session = object()
-    uploaded = UploadedFile("fake-file-id", "processed.csv")
-    completed = ImportQueueItem(42, "Готово")
+    uploaded = UploadedFile(file_id="fake-file-id", filename="processed.csv")
+    completed = ImportQueueItem(cron_num=42, status="Готово")
     content = b"processed csv bytes"
     monkeypatch.setattr(consumer, "load_settings", lambda: settings)
     monkeypatch.setattr(consumer, "request_session", Mock(return_value=session))

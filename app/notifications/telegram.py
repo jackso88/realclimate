@@ -1,20 +1,12 @@
 """Telegram Bot API client for operator notifications."""
 
-import os
 import time
 
 import requests
 
 from app.messaging.kafka import sanitize_error
+from app.notifications.config import NotificationSettings, load_settings
 from app.notifications.exceptions import TelegramDeliveryError
-
-# Telegram rejects messages longer than 4096 characters. Parts are cut a little
-# below that so a "[2/5]" header and characters Telegram counts as two (for
-# example emoji) can never push a part over the real limit.
-TELEGRAM_MESSAGE_LIMIT = 4096
-PART_LIMIT = 4000
-# Telegram allows roughly one message per second to the same chat.
-PAUSE_BETWEEN_PARTS_SECONDS = 1.0
 
 
 def _split_long_line(line: str, limit: int) -> list[str]:
@@ -42,7 +34,7 @@ def _split_long_line(line: str, limit: int) -> list[str]:
     return pieces
 
 
-def split_message(text: str, limit: int = PART_LIMIT) -> list[str]:
+def split_message(text: str, limit: int | None = None) -> list[str]:
     """Split a notification into parts that Telegram will accept.
 
     Whole lines are kept together whenever possible, so a report with one
@@ -52,12 +44,15 @@ def split_message(text: str, limit: int = PART_LIMIT) -> list[str]:
 
     Args:
         text: The full notification text.
-        limit: Maximum length of each part.
+        limit: Maximum length of each part. Defaults to the validated
+            ``message_part_limit`` configuration.
 
     Returns:
         A list with one or more non-empty parts, each at most ``limit``
         characters long. Text that already fits is returned unchanged.
     """
+    if limit is None:
+        limit = NotificationSettings().message_part_limit
     if len(text) <= limit:
         return [text]
 
@@ -97,7 +92,7 @@ def _send_part(token: str, chat_id: str, text: str, timeout: float) -> None:
     Args:
         token: Telegram bot token.
         chat_id: Destination chat identifier.
-        text: Message text, at most ``TELEGRAM_MESSAGE_LIMIT`` characters.
+        text: Message text, at most the configured Telegram character limit.
         timeout: Maximum time to wait for the Telegram API, in seconds.
 
     Raises:
@@ -122,7 +117,12 @@ def _send_part(token: str, chat_id: str, text: str, timeout: float) -> None:
         raise TelegramDeliveryError("Telegram rejected the notification")
 
 
-def send_telegram_message(text: str, timeout: float = 15) -> None:
+def send_telegram_message(
+    text: str,
+    timeout: float | None = None,
+    *,
+    settings: NotificationSettings | None = None,
+) -> None:
     """Send a message to the chat configured for the administrator.
 
     Text longer than Telegram's limit is sent as several consecutive messages
@@ -133,6 +133,8 @@ def send_telegram_message(text: str, timeout: float = 15) -> None:
         text: Plain-text notification to send.
         timeout: Maximum time to wait for the Telegram API per message, in
             seconds.
+        settings: Optional settings loaded once by the notification worker.
+            Direct callers fall back to the service configuration loader.
 
     Raises:
         TelegramDeliveryError: If a request fails or Telegram rejects a message.
@@ -140,12 +142,21 @@ def send_telegram_message(text: str, timeout: float = 15) -> None:
             fails, the earlier parts have already been delivered.
         KeyError: If the bot token or chat ID is not configured.
     """
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
-    parts = split_message(text)
+    if settings is None:
+        settings = load_settings()
+    token = settings.bot_token
+    if not token:
+        raise KeyError("TELEGRAM_BOT_TOKEN")
+    chat_id = settings.chat_id
+    if not chat_id:
+        raise KeyError("TELEGRAM_CHAT_ID")
+    request_timeout = settings.api_timeout_seconds if timeout is None else timeout
+    parts = split_message(text, settings.message_part_limit)
     for number, part in enumerate(parts, start=1):
         if len(parts) > 1:
             part = f"[{number}/{len(parts)}]\n{part}"
-        _send_part(token, chat_id, part, timeout)
+        if len(part) > settings.telegram_message_limit:
+            raise TelegramDeliveryError("Telegram message exceeds its configured limit")
+        _send_part(token, chat_id, part, request_timeout)
         if number < len(parts):
-            time.sleep(PAUSE_BETWEEN_PARTS_SECONDS)
+            time.sleep(settings.pause_between_parts_seconds)

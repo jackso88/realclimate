@@ -1,5 +1,6 @@
 """Tests for the uploader worker's failure path and process wiring."""
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -75,16 +76,19 @@ def test_filename_defaults_to_processed_csv(steps):
 
 def test_main_runs_the_uploader_worker(monkeypatch):
     run_consumer = Mock()
+    settings = SimpleNamespace(bootstrap_servers="localhost:9092")
     monkeypatch.setattr(consumer, "configure_logging", Mock())
     monkeypatch.setattr(consumer, "run_consumer", run_consumer)
-    monkeypatch.delenv("KAFKA_BOOTSTRAP_SERVERS", raising=False)
+    monkeypatch.setattr(
+        consumer,
+        "load_settings",
+        lambda: settings,
+    )
 
     consumer.main()
 
-    run_consumer.assert_called_once_with(
-        "localhost:9092",
-        UPLOADER_REQUESTS,
-        "uploader-service",
-        consumer.handle_request,
-        service_name="uploader",
-    )
+    args, kwargs = run_consumer.call_args
+    assert args[:3] == ("localhost:9092", UPLOADER_REQUESTS, "uploader-service")
+    assert args[3].func is consumer.handle_request
+    assert args[3].keywords == {"settings": settings}
+    assert kwargs == {"service_name": "uploader"}

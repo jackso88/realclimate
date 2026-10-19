@@ -69,7 +69,7 @@ def run_as_main(module_name):
 @pytest.fixture(autouse=True)
 def quiet_logging(monkeypatch):
     monkeypatch.setattr(logging, "basicConfig", Mock())
-    monkeypatch.delenv("KAFKA_BOOTSTRAP_SERVERS", raising=False)
+    monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
 
 @pytest.mark.parametrize(
@@ -80,6 +80,15 @@ def test_consumer_entrypoints_listen_to_their_own_topic(
 ):
     run_consumer = Mock()
     monkeypatch.setattr("app.messaging.kafka.run_consumer", run_consumer)
+    settings = SimpleNamespace(bootstrap_servers="localhost:9092")
+    for config_module in (
+        "app.admin_auth.config",
+        "app.downloader.current.config",
+        "app.downloader.reference.config",
+        "app.uploader.config",
+        "app.notifications.config",
+    ):
+        monkeypatch.setattr(f"{config_module}.load_settings", lambda: settings)
 
     run_as_main(module_name)
 

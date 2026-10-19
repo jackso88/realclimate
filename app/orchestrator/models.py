@@ -1,21 +1,26 @@
 """Data transfer objects for workflow orchestration."""
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass(frozen=True)
-class OrchestratorSettings:
+class OrchestratorSettings(BaseModel):
     """Timeouts and identity used for downstream Kafka requests.
 
     Args:
         request_timeout_seconds: Timeout for each downloader and core request.
         uploader_timeout_seconds: Timeout for uploader completion.
         instance_id: Unique consumer identity used to isolate RPC replies.
+        bootstrap_servers: Kafka broker addresses for the worker.
+        poll_interval_margin_seconds: Safety delay added above worst-case run time.
     """
 
-    request_timeout_seconds: int = 900
-    uploader_timeout_seconds: int = 1800
-    instance_id: str = "orchestrator"
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    request_timeout_seconds: int = Field(default=900, gt=0)
+    uploader_timeout_seconds: int = Field(default=1800, ge=0)
+    instance_id: str = Field(default="orchestrator", min_length=1)
+    bootstrap_servers: str = Field(default="localhost:9092", min_length=1)
+    poll_interval_margin_seconds: int = Field(default=600, gt=0)
 
     @property
     def worst_case_run_seconds(self) -> int:

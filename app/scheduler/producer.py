@@ -1,24 +1,31 @@
 """Publish scheduled workflow requests to Kafka."""
 
 import logging
-import os
 
 from app.messaging.kafka import KafkaBus
 from app.messaging.topics import ORCHESTRATOR_RUNS, ORCHESTRATOR_RUN_RESPONSES
+from app.scheduler.config import SchedulerSettings, load_settings
 
 logger = logging.getLogger(__name__)
 
 
-def publish_workflow_run() -> None:
-    """Start a change-driven workflow and wait for its completion response."""
-    bus = KafkaBus(os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
+def publish_workflow_run(settings: SchedulerSettings | None = None) -> None:
+    """Start a workflow, reusing scheduler settings when provided.
+
+    Args:
+        settings: Settings loaded at daemon startup. Direct calls load the
+            configuration on demand.
+    """
+    if settings is None:
+        settings = load_settings()
+    bus = KafkaBus(settings.bootstrap_servers)
     logger.info("Starting scheduled catalogue workflow")
     response = bus.request(
         ORCHESTRATOR_RUNS,
         ORCHESTRATOR_RUN_RESPONSES,
         "run_workflow",
         {"source": "scheduler"},
-        timeout=float(os.getenv("ORCHESTRATOR_RUN_TIMEOUT_SECONDS", "5400")),
+        timeout=settings.orchestrator_timeout_seconds,
         response_group="scheduler-orchestrator-rpc",
     )
     result = response.payload or {}

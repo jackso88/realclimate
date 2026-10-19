@@ -1,10 +1,11 @@
 """Kafka worker that downloads current catalogue CSV content in memory."""
 
 import logging
-import os
+from functools import partial
 
 from app.admin_auth.producer import request_session
 from app.downloader.current.config import configure_logging, load_settings
+from app.downloader.current.models import Settings
 from app.downloader.current.queue_processor import (
     download_latest_export_content,
     delete_archive_from_admin,
@@ -21,15 +22,17 @@ from app.messaging.topics import (
 logger = logging.getLogger(__name__)
 
 
-def handle_request(message, bus) -> None:
+def handle_request(message, bus, settings: Settings | None = None) -> None:
     """Export the latest CSV from the CMS and reply to the Kafka request.
 
     Args:
         message: Request envelope containing the correlation and reply data.
         bus: Kafka bus used for auth requests and the final response.
+        settings: Optional downloader settings injected once at worker startup.
     """
     try:
-        settings = load_settings()
+        if settings is None:
+            settings = load_settings()
         session = request_session(
             bus,
             ADMIN_AUTH_CURRENT_RESPONSES,
@@ -52,11 +55,12 @@ def handle_request(message, bus) -> None:
 def main() -> None:
     """Run the current downloader Kafka consumer."""
     configure_logging()
+    settings = load_settings()
     run_consumer(
-        os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+        settings.bootstrap_servers,
         CURRENT_DOWNLOAD_REQUESTS,
         "current-downloader-service",
-        handle_request,
+        partial(handle_request, settings=settings),
         service_name="downloader_current",
     )
 

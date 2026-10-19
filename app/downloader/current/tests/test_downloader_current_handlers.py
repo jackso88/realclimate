@@ -1,5 +1,6 @@
 """Tests for the current downloader's failure path, producer and wiring."""
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -69,19 +70,26 @@ def test_a_failure_before_the_export_starts_is_also_reported(steps, monkeypatch)
 
 def test_main_runs_the_current_downloader_worker(monkeypatch):
     run_consumer = Mock()
+    settings = SimpleNamespace(bootstrap_servers="localhost:9092")
     monkeypatch.setattr(consumer, "configure_logging", Mock())
     monkeypatch.setattr(consumer, "run_consumer", run_consumer)
-    monkeypatch.delenv("KAFKA_BOOTSTRAP_SERVERS", raising=False)
+    monkeypatch.setattr(
+        consumer,
+        "load_settings",
+        lambda: settings,
+    )
 
     consumer.main()
 
-    run_consumer.assert_called_once_with(
+    args, kwargs = run_consumer.call_args
+    assert args[:3] == (
         "localhost:9092",
         CURRENT_DOWNLOAD_REQUESTS,
         "current-downloader-service",
-        consumer.handle_request,
-        service_name="downloader_current",
     )
+    assert args[3].func is consumer.handle_request
+    assert args[3].keywords == {"settings": settings}
+    assert kwargs == {"service_name": "downloader_current"}
 
 
 def test_publish_download_sends_metadata_and_compressed_content(monkeypatch):

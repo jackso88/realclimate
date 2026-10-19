@@ -251,7 +251,13 @@ def test_alerts_are_retried_after_the_interval_when_delivery_fails(monkeypatch):
         "load_client_settings",
         lambda servers: SimpleNamespace(to_dict=lambda: {}),
     )
-    settings = HealthMonitorSettings("kafka:9092", ("core",), 120, 180, 30)
+    settings = HealthMonitorSettings(
+        bootstrap_servers="kafka:9092",
+        monitored_services=("core",),
+        heartbeat_timeout_seconds=120,
+        startup_grace_seconds=180,
+        check_interval_seconds=30,
+    )
 
     with pytest.raises(StopMonitor):
         monitor.run_health_monitor(settings, notifier=notifier)

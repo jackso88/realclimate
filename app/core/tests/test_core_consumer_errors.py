@@ -139,16 +139,16 @@ def test_the_excluded_file_directory_is_created(core, monkeypatch, tmp_path):
 
 def test_main_runs_the_core_worker(monkeypatch):
     run_consumer = Mock()
+    settings = SimpleNamespace(bootstrap_servers="localhost:9092")
     monkeypatch.setattr(consumer, "configure_logging", Mock())
     monkeypatch.setattr(consumer, "run_consumer", run_consumer)
+    monkeypatch.setattr(consumer, "load_settings", lambda: settings)
     monkeypatch.delenv("KAFKA_BOOTSTRAP_SERVERS", raising=False)
 
     consumer.main()
 
-    run_consumer.assert_called_once_with(
-        "localhost:9092",
-        CORE_PROCESS_REQUESTS,
-        "core-service",
-        consumer.handle_process,
-        service_name="core",
-    )
+    args, kwargs = run_consumer.call_args
+    assert args[:3] == ("localhost:9092", CORE_PROCESS_REQUESTS, "core-service")
+    assert args[3].func is consumer.handle_process
+    assert args[3].keywords == {"settings": settings}
+    assert kwargs == {"service_name": "core"}

@@ -10,8 +10,10 @@ import logging
 import os
 import re
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.downloader.reference.exceptions import ReferenceConfigurationError
 from app.downloader.reference.models import Settings
@@ -21,6 +23,44 @@ SPREADSHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
 # OAuth2 scopes required to read Google Sheets.
 SCOPES: tuple[str, ...] = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
+
+
+class ReferenceDownloaderEnvironment(BaseModel):
+    """Validated environment values consumed by the reference downloader.
+
+    Args:
+        spreadsheet_url: Google Sheets URL or raw spreadsheet ID.
+        sheet_name: Worksheet title to download.
+        auth_mode: ``user`` for OAuth or ``service_account`` for service access.
+        credentials_file: Optional OAuth client secret for user auth/fallback.
+        token_file: Optional persisted OAuth token for user auth/fallback.
+        service_account_file: Service-account key JSON used by service mode.
+        bootstrap_servers: Kafka broker addresses for this worker.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    spreadsheet_url: str = Field(validation_alias="GOOGLE_SHEET_URL", min_length=1)
+    sheet_name: str = Field(validation_alias="GOOGLE_SHEET_NAME", min_length=1)
+    auth_mode: Literal["user", "service_account"] = Field(
+        default="user", validation_alias="GOOGLE_AUTH_MODE"
+    )
+    credentials_file: Path | None = Field(
+        default=None, validation_alias="GOOGLE_CREDENTIALS_FILE"
+    )
+    token_file: Path | None = Field(default=None, validation_alias="GOOGLE_TOKEN_FILE")
+    service_account_file: Path | None = Field(
+        default=None, validation_alias="GOOGLE_SERVICE_ACCOUNT_FILE"
+    )
+    bootstrap_servers: str = Field(
+        default="localhost:9092", validation_alias="KAFKA_BOOTSTRAP_SERVERS"
+    )
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def normalize_auth_mode(cls, value: object) -> object:
+        """Normalize user-provided auth mode to the supported lowercase form."""
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 def extract_spreadsheet_id(value: str) -> str:
@@ -89,65 +129,60 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         FileNotFoundError: If an explicitly supplied ``.env`` file is missing.
         ReferenceConfigurationError: If a required environment variable is missing.
     """
-    explicit_dotenv_path = dotenv_path is not None
     if dotenv_path is None:
         # Project root is four levels above this package module.
         dotenv_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
 
     base_dir = dotenv_path.resolve().parent
-    if explicit_dotenv_path and not dotenv_path.is_file():
+    is_repository_default = (
+        dotenv_path == Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    )
+    if not is_repository_default and not dotenv_path.is_file():
         raise FileNotFoundError(f".env not found: {dotenv_path}")
 
     if dotenv_path.is_file():
         load_dotenv(dotenv_path, override=False)
 
-    def required(name: str) -> str:
-        """Read a non-empty required setting from the process environment.
-
-        Args:
-            name: Environment variable name to read.
-
-        Returns:
-            The configured string value.
-
-        Raises:
-            ReferenceConfigurationError: If the setting is missing or empty.
-        """
-        value = os.getenv(name)
-        if not value:
-            raise ReferenceConfigurationError(f"Missing environment variable: {name}")
-        return value
-
-    auth_mode = os.getenv("GOOGLE_AUTH_MODE", "user").strip().lower()
-    if auth_mode not in {"user", "service_account"}:
+    values = dict(os.environ)
+    auth_mode_value = values.get("GOOGLE_AUTH_MODE", "user").strip().lower()
+    required = ["GOOGLE_SHEET_URL", "GOOGLE_SHEET_NAME"]
+    if auth_mode_value == "user":
+        required.extend(("GOOGLE_CREDENTIALS_FILE", "GOOGLE_TOKEN_FILE"))
+    elif auth_mode_value == "service_account":
+        required.append("GOOGLE_SERVICE_ACCOUNT_FILE")
+    missing = [name for name in required if not values.get(name)]
+    if missing:
         raise ReferenceConfigurationError(
-            "GOOGLE_AUTH_MODE must be either 'user' or 'service_account'"
+            f"Missing environment variable(s): {', '.join(missing)}"
         )
 
-    credentials_file = None
-    token_file = None
-    service_account_file = None
-    if auth_mode == "user":
-        credentials_file = _resolve_path(required("GOOGLE_CREDENTIALS_FILE"), base_dir)
-        token_file = _resolve_path(required("GOOGLE_TOKEN_FILE"), base_dir)
-    else:
-        service_account_file = _resolve_path(
-            required("GOOGLE_SERVICE_ACCOUNT_FILE"), base_dir
-        )
-        oauth_credentials_path = os.getenv("GOOGLE_CREDENTIALS_FILE")
-        oauth_token_path = os.getenv("GOOGLE_TOKEN_FILE")
-        if oauth_credentials_path:
-            credentials_file = _resolve_path(oauth_credentials_path, base_dir)
-        if oauth_token_path:
-            token_file = _resolve_path(oauth_token_path, base_dir)
+    try:
+        config = ReferenceDownloaderEnvironment.model_validate(values)
+    except ValidationError as error:
+        raise ReferenceConfigurationError(
+            f"Invalid reference downloader settings: {error}"
+        ) from error
 
     return Settings(
-        spreadsheet_url=required("GOOGLE_SHEET_URL"),
-        sheet_name=required("GOOGLE_SHEET_NAME"),
-        credentials_file=credentials_file,
-        token_file=token_file,
-        auth_mode=auth_mode,
-        service_account_file=service_account_file,
+        spreadsheet_url=config.spreadsheet_url,
+        sheet_name=config.sheet_name,
+        credentials_file=(
+            _resolve_path(str(config.credentials_file), base_dir)
+            if config.credentials_file
+            else None
+        ),
+        token_file=(
+            _resolve_path(str(config.token_file), base_dir)
+            if config.token_file
+            else None
+        ),
+        auth_mode=config.auth_mode,
+        service_account_file=(
+            _resolve_path(str(config.service_account_file), base_dir)
+            if config.service_account_file
+            else None
+        ),
+        bootstrap_servers=config.bootstrap_servers,
     )
 
 
