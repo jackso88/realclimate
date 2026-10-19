@@ -2,6 +2,33 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
+_CLAIM_PAIR_SCRIPT = """
+if redis.call('EXISTS', KEYS[3]) == 0
+   and redis.call('HEXISTS', KEYS[1], 'reference_csv') == 1
+   and redis.call('HEXISTS', KEYS[1], 'current_csv') == 1 then
+    return redis.call('SET', KEYS[2], ARGV[1], 'NX', 'EX', ARGV[2]) and 1 or 0
+end
+return 0
+"""
+
+_RELEASE_CLAIM_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
+
+_COMPLETE_PAIR_SCRIPT = """
+if redis.call('GET', KEYS[2]) == ARGV[1] then
+    redis.call('DEL', KEYS[1], KEYS[2])
+    redis.call('SET', KEYS[3], '1', 'EX', ARGV[2])
+    return 1
+end
+return 0
+"""
+
 
 class RedisPendingInputsStore:
     """Store reference/current CSV parts until both are ready for core.
@@ -113,28 +140,16 @@ class RedisPendingInputsStore:
             ``True`` when this worker removed the pair and wrote a completion
             marker, or ``False`` if its lease expired or changed owners.
         """
-        return self.client.transaction(
-            watch_keys=[
+        return bool(
+            self.client.eval(
+                _COMPLETE_PAIR_SCRIPT,
+                3,
                 self._input_key(correlation_id),
                 self._claim_key(correlation_id),
                 self._completed_key(correlation_id),
-            ],
-            read_commands=[("GET", self._claim_key(correlation_id))],
-            condition=lambda replies: replies[0] == token.encode(),
-            write_commands=[
-                (
-                    "DEL",
-                    self._input_key(correlation_id),
-                    self._claim_key(correlation_id),
-                ),
-                (
-                    "SET",
-                    self._completed_key(correlation_id),
-                    "1",
-                    "EX",
-                    self.ttl_seconds,
-                ),
-            ],
+                token,
+                self.ttl_seconds,
+            )
         )
 
     def release(self, correlation_id: str, token: str) -> None:
@@ -144,11 +159,8 @@ class RedisPendingInputsStore:
             correlation_id: Pipeline identifier whose lease should be released.
             token: Claim token returned by :meth:`new_claim_token`.
         """
-        self.client.transaction(
-            watch_keys=[self._claim_key(correlation_id)],
-            read_commands=[("GET", self._claim_key(correlation_id))],
-            condition=lambda replies: replies[0] == token.encode(),
-            write_commands=[("DEL", self._claim_key(correlation_id))],
+        self.client.eval(
+            _RELEASE_CLAIM_SCRIPT, 1, self._claim_key(correlation_id), token
         )
 
     def _save_fields(self, correlation_id: str, fields: dict[str, bytes]) -> None:
@@ -159,33 +171,16 @@ class RedisPendingInputsStore:
         self.client.expire(key, self.ttl_seconds)
 
     def _claim_if_ready(self, correlation_id: str, token: str) -> bool:
-        return self.client.transaction(
-            watch_keys=[
-                self._input_key(correlation_id),
-                self._claim_key(correlation_id),
-                self._completed_key(correlation_id),
-            ],
-            read_commands=[
-                ("HGETALL", self._input_key(correlation_id)),
-                ("GET", self._claim_key(correlation_id)),
-                ("GET", self._completed_key(correlation_id)),
-            ],
-            condition=lambda replies: (
-                b"reference_csv" in replies[0]
-                and b"current_csv" in replies[0]
-                and replies[1] is None
-                and replies[2] is None
-            ),
-            write_commands=[
-                (
-                    "SET",
-                    self._claim_key(correlation_id),
-                    token,
-                    "EX",
-                    self.claim_ttl_seconds,
-                )
-            ],
+        result = self.client.eval(
+            _CLAIM_PAIR_SCRIPT,
+            3,
+            self._input_key(correlation_id),
+            self._claim_key(correlation_id),
+            self._completed_key(correlation_id),
+            token,
+            self.claim_ttl_seconds,
         )
+        return bool(result)
 
     def _input_key(self, correlation_id: str) -> str:
         return f"{self.key_prefix}:{correlation_id}"

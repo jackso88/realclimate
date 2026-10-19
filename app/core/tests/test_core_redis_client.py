@@ -63,31 +63,6 @@ def test_execute_command_authenticates_selects_database_and_encodes_bytes(monkey
     ]
 
 
-def test_transaction_uses_watch_multi_and_exec_without_server_scripts(monkeypatch):
-    fake_socket = FakeSocket(b"+OK\r\n$-1\r\n+OK\r\n+QUEUED\r\n*1\r\n+OK\r\n")
-    monkeypatch.setattr(
-        "app.core.redis_client.socket.create_connection",
-        lambda *_args, **_kwargs: fake_socket,
-    )
-    client = RedisClient("localhost", 6379)
-
-    committed = client.transaction(
-        watch_keys=["claim"],
-        read_commands=[("GET", "claim")],
-        condition=lambda replies: replies == [None],
-        write_commands=[("SET", "claim", "owner", "EX", 60)],
-    )
-
-    assert committed is True
-    assert fake_socket.sent == [
-        b"*2\r\n$5\r\nWATCH\r\n$5\r\nclaim\r\n",
-        b"*2\r\n$3\r\nGET\r\n$5\r\nclaim\r\n",
-        b"*1\r\n$5\r\nMULTI\r\n",
-        b"*5\r\n$3\r\nSET\r\n$5\r\nclaim\r\n$5\r\nowner\r\n$2\r\nEX\r\n$2\r\n60\r\n",
-        b"*1\r\n$4\r\nEXEC\r\n",
-    ]
-
-
 @pytest.mark.parametrize(
     ("response", "expected"),
     [

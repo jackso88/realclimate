@@ -7,6 +7,7 @@ import pytest
 
 from app.contracts.models import Envelope
 from app.messaging.payloads import encode_bytes
+from app.messaging.topics import CORE_PROCESS_RESULTS
 from app.uploader import consumer
 from app.uploader.exceptions import ImportQueueError
 

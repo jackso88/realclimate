@@ -2,7 +2,12 @@
 
 import pytest
 
-from app.core.pending_inputs import RedisPendingInputsStore
+from app.core.pending_inputs import (
+    _CLAIM_PAIR_SCRIPT,
+    _COMPLETE_PAIR_SCRIPT,
+    _RELEASE_CLAIM_SCRIPT,
+    RedisPendingInputsStore,
+)
 
 
 class FakeRedis:
@@ -25,29 +30,37 @@ class FakeRedis:
     def hgetall(self, key):
         return self.hashes.get(key, {}).copy()
 
-    def transaction(self, *, watch_keys, read_commands, condition, write_commands):
-        replies = []
-        for command in read_commands:
-            if command[0] == "GET":
-                replies.append(self.values.get(command[1]))
-            elif command[0] == "HGETALL":
-                replies.append(self.hashes.get(command[1], {}).copy())
-            else:
-                raise AssertionError(f"Unexpected Redis read command: {command}")
-        if not condition(replies):
-            return False
-        for command in write_commands:
-            if command[0] == "SET":
-                _, key, value, _expiry, seconds = command
-                self.values[key] = value.encode() if isinstance(value, str) else value
-                self.expiries[key] = int(seconds)
-            elif command[0] == "DEL":
-                for key in command[1:]:
-                    self.hashes.pop(key, None)
-                    self.values.pop(key, None)
-            else:
-                raise AssertionError(f"Unexpected Redis write command: {command}")
-        return True
+    def eval(self, script, key_count, *args):
+        if script == _CLAIM_PAIR_SCRIPT:
+            input_key, claim_key, completed_key, token, ttl = args
+            fields = self.hashes.get(input_key, {})
+            if (
+                completed_key in self.values
+                or b"reference_csv" not in fields
+                or b"current_csv" not in fields
+            ):
+                return 0
+            if claim_key in self.values:
+                return 0
+            self.values[claim_key] = token.encode()
+            self.expiries[claim_key] = int(ttl)
+            return 1
+        if script == _RELEASE_CLAIM_SCRIPT:
+            claim_key, token = args
+            if self.values.get(claim_key) == token.encode():
+                del self.values[claim_key]
+                return 1
+            return 0
+        if script == _COMPLETE_PAIR_SCRIPT:
+            input_key, claim_key, completed_key, token, ttl = args
+            if self.values.get(claim_key) == token.encode():
+                self.hashes.pop(input_key, None)
+                del self.values[claim_key]
+                self.values[completed_key] = b"1"
+                self.expiries[completed_key] = int(ttl)
+                return 1
+            return 0
+        raise AssertionError("Unexpected Redis script")
 
     def delete(self, *keys):
         self.deleted.extend(keys)

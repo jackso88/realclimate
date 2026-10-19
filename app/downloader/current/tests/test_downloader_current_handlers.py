@@ -8,7 +8,7 @@ import pytest
 from app.contracts.models import Envelope
 from app.downloader.current import consumer, producer
 from app.downloader.current.models import DownloadedCsv
-from app.messaging.payloads import decode_bytes
+from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
 
 

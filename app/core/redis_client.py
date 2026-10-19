@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import socket
-from collections.abc import Callable, Sequence
 from urllib.parse import unquote, urlsplit
 
 
@@ -89,6 +88,10 @@ class RedisClient:
         """Set the key's expiration in seconds."""
         return bool(self.execute_command("EXPIRE", key, seconds))
 
+    def eval(self, script: str, key_count: int, *args: str | int) -> int:
+        """Execute a Lua script with the provided keys and arguments."""
+        return int(self.execute_command("EVAL", script, key_count, *args))
+
     def hgetall(self, key: str) -> dict[bytes, bytes]:
         """Return a Redis hash as a dictionary of raw byte fields and values."""
         response = self.execute_command("HGETALL", key)
@@ -101,55 +104,6 @@ class RedisClient:
     def delete(self, *keys: str) -> int:
         """Delete one or more Redis keys."""
         return int(self.execute_command("DEL", *keys))
-
-    def transaction(
-        self,
-        *,
-        watch_keys: Sequence[str],
-        read_commands: Sequence[Sequence[str | bytes | int]],
-        condition: Callable[[list], bool],
-        write_commands: Sequence[Sequence[str | bytes | int]],
-    ) -> bool:
-        """Run conditional Redis commands atomically using WATCH/MULTI/EXEC.
-
-        Args:
-            watch_keys: Keys whose changes should abort the transaction.
-            read_commands: Read-only Redis commands evaluated after WATCH.
-            condition: Predicate over the read replies deciding whether to
-                execute the writes.
-            write_commands: Commands queued and executed atomically when the
-                condition is true.
-
-        Returns:
-            ``True`` if EXEC committed, or ``False`` if the predicate failed
-            or a watched key changed before EXEC.
-        """
-        with socket.create_connection(
-            (self.host, self.port), timeout=self.socket_timeout
-        ) as connection:
-            connection.settimeout(self.socket_timeout)
-            reader = connection.makefile("rb")
-            self._initialize_connection(connection, reader)
-            self._send_command(connection, ("WATCH", *watch_keys))
-            self._read_response(reader)
-            replies = []
-            for command in read_commands:
-                self._send_command(connection, command)
-                response = self._read_response(reader)
-                if command[0] == "HGETALL":
-                    response = dict(zip(response[::2], response[1::2]))
-                replies.append(response)
-            if not condition(replies):
-                self._send_command(connection, ("UNWATCH",))
-                self._read_response(reader)
-                return False
-            self._send_command(connection, ("MULTI",))
-            self._read_response(reader)
-            for command in write_commands:
-                self._send_command(connection, command)
-                self._read_response(reader)
-            self._send_command(connection, ("EXEC",))
-            return self._read_response(reader) is not None
 
     def close(self) -> None:
         """Close hook matching common Redis client interfaces.
@@ -178,20 +132,19 @@ class RedisClient:
         ) as connection:
             connection.settimeout(self.socket_timeout)
             reader = connection.makefile("rb")
-            self._initialize_connection(connection, reader)
+            if self.password is not None:
+                if self.username is None:
+                    self._send_command(connection, ("AUTH", self.password))
+                else:
+                    self._send_command(
+                        connection, ("AUTH", self.username, self.password)
+                    )
+                self._read_response(reader)
+            if self.database:
+                self._send_command(connection, ("SELECT", self.database))
+                self._read_response(reader)
             self._send_command(connection, parts)
             return self._read_response(reader)
-
-    def _initialize_connection(self, connection, reader) -> None:
-        if self.password is not None:
-            if self.username is None:
-                self._send_command(connection, ("AUTH", self.password))
-            else:
-                self._send_command(connection, ("AUTH", self.username, self.password))
-            self._read_response(reader)
-        if self.database:
-            self._send_command(connection, ("SELECT", self.database))
-            self._read_response(reader)
 
     @staticmethod
     def _send_command(connection: socket.socket, parts) -> None:
