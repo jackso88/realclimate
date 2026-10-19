@@ -164,12 +164,13 @@ services:
       <<: *common_env
       GOOGLE_SHEET_URL: ${GOOGLE_SHEET_URL:?Set GOOGLE_SHEET_URL in .env}
       GOOGLE_SHEET_NAME: ${GOOGLE_SHEET_NAME:?Set GOOGLE_SHEET_NAME in .env}
-      GOOGLE_CREDENTIALS_FILE: /run/secrets/google/client_secret.json
-      GOOGLE_TOKEN_FILE: /var/lib/app/token.json
+      GOOGLE_AUTH_MODE: ${GOOGLE_AUTH_MODE:-user}
+      GOOGLE_CREDENTIALS_FILE: /app/app/downloader/reference/credentials/client_secret.json
+      GOOGLE_TOKEN_FILE: /app/app/downloader/reference/credentials/token.json
+      GOOGLE_SERVICE_ACCOUNT_FILE: /app/app/downloader/reference/credentials/service_account_secret.json
     volumes:
       - *kafka_ca_volume
-      - ../../config/google:/var/lib/app
-      - ../../config/google:/run/secrets/google:ro
+      - ../../app/downloader/reference/credentials:/app/app/downloader/reference/credentials
     depends_on:
       kafka_init: {condition: service_completed_successfully}
     restart: unless-stopped

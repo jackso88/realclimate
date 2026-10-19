@@ -5,7 +5,10 @@ import os
 
 import gspread
 
-from app.downloader.reference.google_oauth import get_credentials
+from app.downloader.reference.google_oauth import (
+    get_credentials,
+    get_service_account_credentials,
+)
 from app.downloader.reference.config import (
     SCOPES,
     configure_logging,
@@ -30,11 +33,17 @@ def handle_request(message, bus) -> None:
     try:
         settings = load_settings()
         spreadsheet_id = extract_spreadsheet_id(settings.spreadsheet_url)
-        credentials = get_credentials(
-            settings.credentials_file,
-            settings.token_file,
-            SCOPES,
-        )
+        if getattr(settings, "auth_mode", "user") == "service_account":
+            credentials = get_service_account_credentials(
+                settings.service_account_file,
+                SCOPES,
+            )
+        else:
+            credentials = get_credentials(
+                settings.credentials_file,
+                settings.token_file,
+                SCOPES,
+            )
         worksheet = (
             gspread.authorize(credentials)
             .open_by_key(spreadsheet_id)

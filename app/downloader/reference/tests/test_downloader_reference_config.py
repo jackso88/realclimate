@@ -73,6 +73,8 @@ class TestLoadSettings:
             "GOOGLE_SHEET_NAME",
             "GOOGLE_CREDENTIALS_FILE",
             "GOOGLE_TOKEN_FILE",
+            "GOOGLE_AUTH_MODE",
+            "GOOGLE_SERVICE_ACCOUNT_FILE",
         ):
             monkeypatch.delenv(key, raising=False)
 
@@ -89,6 +91,7 @@ class TestLoadSettings:
     ) -> None:
         monkeypatch.setenv("GOOGLE_SHEET_URL", "https://sheets.example.test/id")
         monkeypatch.setenv("GOOGLE_SHEET_NAME", "Catalog")
+        monkeypatch.setenv("GOOGLE_AUTH_MODE", "user")
         monkeypatch.setenv("GOOGLE_CREDENTIALS_FILE", "/run/secrets/client.json")
         monkeypatch.setenv("GOOGLE_TOKEN_FILE", "/var/lib/app/token.json")
 
@@ -98,6 +101,36 @@ class TestLoadSettings:
         assert settings.sheet_name == "Catalog"
         assert settings.credentials_file == Path("/run/secrets/client.json")
         assert settings.token_file == Path("/var/lib/app/token.json")
+
+    def test_loads_service_account_mode_without_user_oauth_files(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GOOGLE_SHEET_URL", "https://sheets.example.test/id")
+        monkeypatch.setenv("GOOGLE_SHEET_NAME", "Catalog")
+        monkeypatch.setenv("GOOGLE_AUTH_MODE", "service_account")
+        monkeypatch.setenv(
+            "GOOGLE_SERVICE_ACCOUNT_FILE",
+            "/app/app/downloader/reference/credentials/service_account_secret.json",
+        )
+        monkeypatch.delenv("GOOGLE_CREDENTIALS_FILE", raising=False)
+        monkeypatch.delenv("GOOGLE_TOKEN_FILE", raising=False)
+
+        settings = load_settings()
+
+        assert settings.auth_mode == "service_account"
+        assert settings.credentials_file is None
+        assert settings.token_file is None
+        assert settings.service_account_file == Path(
+            "/app/app/downloader/reference/credentials/service_account_secret.json"
+        )
+
+    def test_rejects_unknown_auth_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GOOGLE_SHEET_URL", "https://sheets.example.test/id")
+        monkeypatch.setenv("GOOGLE_SHEET_NAME", "Catalog")
+        monkeypatch.setenv("GOOGLE_AUTH_MODE", "unsupported")
+
+        with pytest.raises(RuntimeError, match="GOOGLE_AUTH_MODE"):
+            load_settings()
 
     def test_missing_variable_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -112,6 +145,8 @@ class TestLoadSettings:
             "GOOGLE_SHEET_NAME",
             "GOOGLE_CREDENTIALS_FILE",
             "GOOGLE_TOKEN_FILE",
+            "GOOGLE_AUTH_MODE",
+            "GOOGLE_SERVICE_ACCOUNT_FILE",
         ):
             monkeypatch.delenv(key, raising=False)
 

@@ -8,17 +8,51 @@ when possible.
 
 from __future__ import annotations
 
-from pathlib import Path
 import logging
+from pathlib import Path
 from typing import Sequence
 
 from google.auth.credentials import Credentials
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+
 from app.downloader.reference.exceptions import ReferenceAuthenticationError
 
 logger = logging.getLogger(__name__)
+
+
+def get_service_account_credentials(
+    credentials_file: Path,
+    scopes: Sequence[str],
+) -> Credentials:
+    """Load service-account credentials for Google APIs.
+
+    Args:
+        credentials_file: Service-account JSON key file.
+        scopes: Google API scopes requested by this service.
+
+    Returns:
+        Service-account credentials that refresh access tokens automatically.
+
+    Raises:
+        FileNotFoundError: If the service-account JSON file is missing.
+        ReferenceAuthenticationError: If the JSON cannot be loaded as a
+            service account.
+    """
+    if not credentials_file.is_file():
+        raise FileNotFoundError(
+            f"Google service-account file not found: {credentials_file}"
+        )
+    try:
+        return ServiceAccountCredentials.from_service_account_file(
+            str(credentials_file), scopes=scopes
+        )
+    except Exception as error:
+        raise ReferenceAuthenticationError(
+            "Google service-account credentials could not be loaded"
+        ) from error
 
 
 def get_credentials(

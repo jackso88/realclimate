@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 from app.downloader.reference.exceptions import ReferenceConfigurationError
 from app.downloader.reference.models import Settings
 
@@ -70,8 +71,9 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
 
     * ``GOOGLE_SHEET_URL``
     * ``GOOGLE_SHEET_NAME``
-    * ``GOOGLE_CREDENTIALS_FILE``
-    * ``GOOGLE_TOKEN_FILE``
+    * Optional ``GOOGLE_AUTH_MODE`` (``user`` or ``service_account``; defaults to ``user``)
+    * ``GOOGLE_CREDENTIALS_FILE`` and ``GOOGLE_TOKEN_FILE`` in user mode
+    * ``GOOGLE_SERVICE_ACCOUNT_FILE`` in service-account mode
 
     Args:
         dotenv_path: Explicit path to the ``.env`` file. When omitted,
@@ -114,11 +116,30 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
             raise ReferenceConfigurationError(f"Missing environment variable: {name}")
         return value
 
+    auth_mode = os.getenv("GOOGLE_AUTH_MODE", "user").strip().lower()
+    if auth_mode not in {"user", "service_account"}:
+        raise ReferenceConfigurationError(
+            "GOOGLE_AUTH_MODE must be either 'user' or 'service_account'"
+        )
+
+    credentials_file = None
+    token_file = None
+    service_account_file = None
+    if auth_mode == "user":
+        credentials_file = _resolve_path(required("GOOGLE_CREDENTIALS_FILE"), base_dir)
+        token_file = _resolve_path(required("GOOGLE_TOKEN_FILE"), base_dir)
+    else:
+        service_account_file = _resolve_path(
+            required("GOOGLE_SERVICE_ACCOUNT_FILE"), base_dir
+        )
+
     return Settings(
         spreadsheet_url=required("GOOGLE_SHEET_URL"),
         sheet_name=required("GOOGLE_SHEET_NAME"),
-        credentials_file=_resolve_path(required("GOOGLE_CREDENTIALS_FILE"), base_dir),
-        token_file=_resolve_path(required("GOOGLE_TOKEN_FILE"), base_dir),
+        credentials_file=credentials_file,
+        token_file=token_file,
+        auth_mode=auth_mode,
+        service_account_file=service_account_file,
     )
 
 

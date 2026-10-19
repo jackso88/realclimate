@@ -10,7 +10,7 @@ class ReferenceConfigurationError(ReferenceDownloaderError):
 
 
 class ReferenceAuthenticationError(ReferenceDownloaderError):
-    """Raised when Google OAuth credentials cannot be obtained."""
+    """Raised when Google API credentials cannot be obtained."""
 
 
 class SpreadsheetDownloadError(ReferenceDownloaderError):

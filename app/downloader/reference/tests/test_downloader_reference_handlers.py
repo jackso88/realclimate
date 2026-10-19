@@ -69,6 +69,28 @@ def test_handler_reads_the_configured_worksheet_and_publishes_csv(sheet):
     sheet.reply.assert_not_called()
 
 
+def test_handler_uses_service_account_when_configured(sheet, monkeypatch):
+    service_account_settings = SimpleNamespace(
+        **{
+            **vars(SETTINGS),
+            "auth_mode": "service_account",
+            "service_account_file": "/credentials/service_account_secret.json",
+        }
+    )
+    service_credentials = Mock(return_value="service credentials")
+    monkeypatch.setattr(consumer, "load_settings", lambda: service_account_settings)
+    monkeypatch.setattr(
+        consumer, "get_service_account_credentials", service_credentials
+    )
+
+    consumer.handle_request(make_request(), object())
+
+    service_credentials.assert_called_once_with(
+        "/credentials/service_account_secret.json", SCOPES
+    )
+    sheet.credentials.assert_not_called()
+
+
 def test_google_failure_is_returned_as_an_error_reply(sheet):
     sheet.worksheet.get_all_values.side_effect = RuntimeError("quota exceeded")
     bus = object()
