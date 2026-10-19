@@ -42,6 +42,42 @@ def _positive_int(variable: str, default: int) -> int:
     return value
 
 
+def _busy_overrides(monitored_services: tuple[str, ...]) -> dict[str, int]:
+    """Parse per-service busy limits from ``HEALTH_MAX_BUSY_OVERRIDES``.
+
+    Args:
+        monitored_services: Services that heartbeat names may refer to.
+
+    Returns:
+        A mapping of service name to its busy limit in seconds.
+
+    Raises:
+        ValueError: If an entry is not ``service=seconds`` with positive
+            seconds, or names a service that is not monitored (usually a typo
+            that would otherwise silently do nothing).
+    """
+    overrides: dict[str, int] = {}
+    raw_value = os.getenv("HEALTH_MAX_BUSY_OVERRIDES", "")
+    for entry in (item.strip() for item in raw_value.split(",") if item.strip()):
+        name, separator, seconds = entry.partition("=")
+        name = name.strip()
+        try:
+            limit = int(seconds)
+        except ValueError:
+            limit = 0
+        if not separator or limit <= 0:
+            raise ValueError(
+                "HEALTH_MAX_BUSY_OVERRIDES entries must look like "
+                f"service=seconds with positive seconds, got {entry!r}"
+            )
+        if name not in monitored_services:
+            raise ValueError(
+                f"HEALTH_MAX_BUSY_OVERRIDES names unknown service {name!r}"
+            )
+        overrides[name] = limit
+    return overrides
+
+
 def load_settings() -> HealthMonitorSettings:
     """Load the monitor's Kafka endpoint and timing controls.
 
@@ -51,6 +87,10 @@ def load_settings() -> HealthMonitorSettings:
         HEALTH_HEARTBEAT_TIMEOUT_SECONDS: Heartbeat expiry threshold.
         HEALTH_STARTUP_GRACE_SECONDS: Startup/recovery grace period.
         HEALTH_CHECK_INTERVAL_SECONDS: Poll and broker-check interval.
+        HEALTH_MAX_BUSY_SECONDS: Longest one message may be in progress
+            before a worker is reported as stuck.
+        HEALTH_MAX_BUSY_OVERRIDES: Optional per-service limits written as
+            ``service=seconds,service=seconds``.
 
     Returns:
         Settings for the health monitor.
@@ -76,6 +116,8 @@ def load_settings() -> HealthMonitorSettings:
         ),
         startup_grace_seconds=_positive_int("HEALTH_STARTUP_GRACE_SECONDS", 180),
         check_interval_seconds=_positive_int("HEALTH_CHECK_INTERVAL_SECONDS", 10),
+        max_busy_seconds=_positive_int("HEALTH_MAX_BUSY_SECONDS", 5400),
+        busy_limit_overrides=_busy_overrides(monitored_services),
     )
 
 

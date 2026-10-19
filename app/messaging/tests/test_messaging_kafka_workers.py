@@ -305,3 +305,121 @@ def test_run_consumer_has_no_heartbeat_without_a_service_name(monkeypatch, fake_
         kafka.run_consumer("kafka:9092", "jobs", "group", lambda *_: None)
 
     assert created == []
+
+
+class RecordingReporter:
+    """Record busy/idle marks together with handler and commit events."""
+
+    events = None
+
+    def __init__(self, bus, service):
+        self.service = service
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def mark_busy(self):
+        RecordingReporter.events.append("busy")
+
+    def mark_idle(self):
+        RecordingReporter.events.append("idle")
+
+
+def install_recording_reporter(monkeypatch, events):
+    RecordingReporter.events = events
+    monkeypatch.setattr("app.messaging.health.HeartbeatReporter", RecordingReporter)
+
+
+def test_worker_is_marked_busy_only_while_the_handler_runs(monkeypatch, fake_kafka):
+    events = fake_kafka.events
+    install_recording_reporter(monkeypatch, events)
+    record = FakeMessage(Envelope.create("ping").encode())
+    fake_kafka.consumer = ScriptedConsumer([record], events)
+    original_commit = fake_kafka.consumer.commit
+
+    def recording_commit(**kwargs):
+        events.append("commit")
+        original_commit(**kwargs)
+
+    fake_kafka.consumer.commit = recording_commit
+
+    with pytest.raises(StopLoop):
+        kafka.run_consumer(
+            "kafka:9092",
+            "jobs",
+            "group",
+            lambda envelope, bus: events.append("handle"),
+            service_name="core",
+        )
+
+    interesting = [event for event in events if event != "poll"]
+    assert interesting == ["busy", "handle", "idle", "commit"]
+
+
+def test_worker_is_marked_idle_even_when_the_handler_fails(monkeypatch, fake_kafka):
+    events = fake_kafka.events
+    install_recording_reporter(monkeypatch, events)
+    record = FakeMessage(Envelope.create("ping").encode())
+    fake_kafka.consumer = ScriptedConsumer([record], events)
+
+    def failing_handler(envelope, bus):
+        raise ValueError("handler crashed")
+
+    with pytest.raises(StopLoop):
+        kafka.run_consumer(
+            "kafka:9092", "jobs", "group", failing_handler, service_name="core"
+        )
+
+    interesting = [event for event in events if event != "poll"]
+    assert interesting == ["busy", "idle"]
+    assert len(fake_kafka.consumer.commits) == 1
+
+
+def test_unnamed_workers_run_without_any_busy_tracking(fake_kafka):
+    record = FakeMessage(Envelope.create("ping").encode())
+    fake_kafka.consumer = ScriptedConsumer([record], fake_kafka.events)
+    handled = []
+
+    with pytest.raises(StopLoop):
+        kafka.run_consumer(
+            "kafka:9092", "jobs", "group", lambda envelope, bus: handled.append(1)
+        )
+
+    assert handled == [1]
+
+
+def test_poll_interval_defaults_to_one_hour(fake_kafka):
+    fake_kafka.consumer = ScriptedConsumer([], fake_kafka.events)
+
+    with pytest.raises(StopLoop):
+        kafka.run_consumer("kafka:9092", "jobs", "group", lambda *_: None)
+
+    assert fake_kafka.consumer_configs[0]["max.poll.interval.ms"] == 3_600_000
+
+
+def test_poll_interval_can_be_raised_for_slow_handlers(fake_kafka):
+    fake_kafka.consumer = ScriptedConsumer([], fake_kafka.events)
+
+    with pytest.raises(StopLoop):
+        kafka.run_consumer(
+            "kafka:9092",
+            "jobs",
+            "group",
+            lambda *_: None,
+            max_poll_interval_ms=5_100_000,
+        )
+
+    assert fake_kafka.consumer_configs[0]["max.poll.interval.ms"] == 5_100_000
+
+
+def test_request_consumers_use_the_default_poll_interval(fake_kafka):
+    reply = reply_to_request(fake_kafka, {"ok": True})
+    fake_kafka.consumer = ScriptedConsumer([reply], fake_kafka.events)
+
+    make_request(kafka.KafkaBus("kafka:9092"))
+
+    config = fake_kafka.consumer_configs[0]
+    assert config["max.poll.interval.ms"] == kafka.DEFAULT_MAX_POLL_INTERVAL_MS

@@ -115,16 +115,37 @@ def find_latest_export_archive(html: str, settings: Settings) -> tuple[int, str]
     return max(candidates, key=lambda candidate: candidate[0])
 
 
+def find_latest_queue_cron_num(html: str) -> int:
+    """Find the highest numeric cron number, including jobs still running.
+
+    Args:
+        html: HTML returned by the shop queue page.
+
+    Returns:
+        Highest cron number in the queue, or zero when no numeric queue
+        entries are present.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    cron_numbers: list[int] = []
+    for cron_element in soup.select(".cron-list-item .cron-num"):
+        cron_text = cron_element.get_text(strip=True).removeprefix("#")
+        try:
+            cron_numbers.append(int(cron_text))
+        except ValueError:
+            continue
+    return max(cron_numbers, default=0)
+
+
 def get_latest_export_cron_num(
     session: requests.Session,
     settings: Settings,
     timeout: float = 30,
 ) -> int:
-    """Read the current highest completed export number before queueing a job.
+    """Read the current highest queue number before queueing an export.
 
-    Returns zero when the file list contains no completed ZIP export. The CLI
-    uses this snapshot so it will not accidentally download an older archive
-    while the newly queued export is still running.
+    Includes unfinished jobs, which do not have ZIP links yet. The CLI uses
+    this snapshot so it will not mistake an older, still-running export for
+    the newly queued job.
 
     Args:
         session: Authenticated CMS session used to fetch the shop view.
@@ -132,7 +153,7 @@ def get_latest_export_cron_num(
         timeout: Maximum number of seconds to wait for the HTTP request.
 
     Returns:
-        Highest completed export number, or zero if none is listed.
+        Highest numeric queue number, or zero if no queue entries are listed.
 
     Raises:
         requests.RequestException: If the CMS request fails.
@@ -143,11 +164,7 @@ def get_latest_export_cron_num(
         timeout=timeout,
     )
     response.raise_for_status()
-    try:
-        cron_num, _ = find_latest_export_archive(response.text, settings)
-    except ExportNotReadyError:
-        return 0
-    return cron_num
+    return find_latest_queue_cron_num(response.text)
 
 
 def _shop_view_params(settings: Settings) -> list[tuple[str, str]]:

@@ -14,6 +14,8 @@ import pytest
 
 from app.health_monitor.config import DEFAULT_MONITORED_SERVICES
 from app.messaging import topics
+from app.orchestrator.consumer import max_poll_interval_ms
+from app.orchestrator.models import OrchestratorSettings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_DIR = REPO_ROOT / "app"
@@ -141,3 +143,44 @@ def test_services_only_depend_on_each_other_through_known_exceptions():
                 found.add((source_service, target_service))
 
     assert found == ALLOWED_SERVICE_DEPENDENCIES
+
+
+def compose_default(name):
+    """Return the default value the compose file gives to an env variable."""
+    text = COMPOSE.read_text(encoding="utf-8")
+    match = re.search(rf"\$\{{{name}:-(\d+)\}}", text)
+    assert match, f"{name} has no numeric default in compose.yaml"
+    return int(match.group(1))
+
+
+@requires_compose
+def test_deployed_timeouts_agree_with_the_code_defaults():
+    settings = OrchestratorSettings()
+    download = compose_default("DOWNLOAD_TIMEOUT_SECONDS")
+    upload = compose_default("IMPORT_TIMEOUT_SECONDS")
+
+    assert download == settings.request_timeout_seconds
+    assert upload == settings.uploader_timeout_seconds
+
+
+@requires_compose
+def test_every_layer_waits_at_least_as_long_as_the_layer_below():
+    worst_case = OrchestratorSettings(
+        request_timeout_seconds=compose_default("DOWNLOAD_TIMEOUT_SECONDS"),
+        uploader_timeout_seconds=compose_default("IMPORT_TIMEOUT_SECONDS"),
+    ).worst_case_run_seconds
+
+    # The scheduler must not give up on a run the orchestrator is still doing,
+    # and the stuck-worker limit must not fire during a legitimate long run.
+    assert compose_default("ORCHESTRATOR_RUN_TIMEOUT_SECONDS") >= worst_case
+    assert compose_default("HEALTH_MAX_BUSY_SECONDS") >= worst_case
+
+
+@requires_compose
+def test_the_orchestrator_kafka_consumer_outlives_the_worst_case_run():
+    settings = OrchestratorSettings(
+        request_timeout_seconds=compose_default("DOWNLOAD_TIMEOUT_SECONDS"),
+        uploader_timeout_seconds=compose_default("IMPORT_TIMEOUT_SECONDS"),
+    )
+
+    assert max_poll_interval_ms(settings) > settings.worst_case_run_seconds * 1000

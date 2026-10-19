@@ -103,17 +103,26 @@ class FakeAdmin:
             raise outcome
 
 
-def beat(clock, service="core"):
+def beat(clock, service="core", busy=None):
     """Build a script item that delivers a fresh heartbeat for ``service``."""
 
     def build():
         payload = {"service": service, "sent_at": clock.time()}
+        if busy is not None:
+            payload["busy_seconds"] = busy
         return FakeMessage(Envelope.create("heartbeat", payload).encode())
 
     return build
 
 
-def run_monitor(monkeypatch, clock, script, services=("core",), broker=(True,)):
+def run_monitor(
+    monkeypatch,
+    clock,
+    script,
+    services=("core",),
+    broker=(True,),
+    busy_overrides=None,
+):
     """Run the monitor against a script and return everything it touched."""
     consumer = ScriptedConsumer(clock, script)
     notifier = Mock()
@@ -136,6 +145,7 @@ def run_monitor(monkeypatch, clock, script, services=("core",), broker=(True,)):
         heartbeat_timeout_seconds=120,
         startup_grace_seconds=180,
         check_interval_seconds=30,
+        busy_limit_overrides=busy_overrides or {},
     )
 
     with pytest.raises(StopMonitor):
@@ -326,3 +336,61 @@ def test_consumer_errors_are_warned_about_except_partition_eof(monkeypatch, capl
 
     assert caplog.text.count("Heartbeat consumer error: coordinator unavailable") == 1
     assert "-191" not in caplog.text
+
+
+def test_a_worker_stuck_on_one_message_is_alerted_while_still_heartbeating(
+    monkeypatch,
+):
+    clock = FakeClock()
+    script = [
+        (0, beat(clock, busy=0)),
+        (60, beat(clock, busy=6000)),
+        (30, beat(clock, busy=6030)),
+        (30, beat(clock, busy=0)),
+    ]
+
+    run = run_monitor(monkeypatch, clock, script)
+
+    assert len(run.texts) == 2
+    assert run.texts[0].startswith("⚠️ Сервис «core» уже 100 мин")
+    assert "лимит 90 мин" in run.texts[0]
+    assert run.texts[1] == "✅ Сервис «core» завершил обработку сообщения."
+
+
+def test_a_stuck_worker_is_reported_only_once_while_it_stays_stuck(monkeypatch):
+    clock = FakeClock()
+    script = [(0, beat(clock, busy=6000)), (60, beat(clock, busy=6060))] * 3
+
+    run = run_monitor(monkeypatch, clock, script)
+
+    assert len(run.texts) == 1
+
+
+def test_a_busy_worker_within_its_limit_is_left_alone(monkeypatch):
+    clock = FakeClock()
+    script = [(0, beat(clock, busy=10)), (60, beat(clock, busy=4000))]
+
+    run = run_monitor(monkeypatch, clock, script)
+
+    assert run.texts == []
+
+
+def test_a_stricter_limit_for_one_service_is_applied_by_the_loop(monkeypatch):
+    clock = FakeClock()
+    script = [(0, beat(clock, busy=150))]
+
+    run = run_monitor(monkeypatch, clock, script, busy_overrides={"core": 100})
+
+    assert len(run.texts) == 1
+    assert "2 мин" in run.texts[0]
+    assert "лимит 100 с" in run.texts[0]
+
+
+def test_a_stuck_alert_is_logged_as_a_warning(monkeypatch, caplog):
+    clock = FakeClock()
+    script = [(0, beat(clock, busy=6000))]
+
+    with caplog.at_level(logging.WARNING, logger="app.health_monitor.monitor"):
+        run_monitor(monkeypatch, clock, script)
+
+    assert "Service core has handled one message for 6000 s" in caplog.text
