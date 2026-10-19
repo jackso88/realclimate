@@ -50,6 +50,14 @@ with its own Kafka group without duplicating the large payload. The uploader run
 when the change report is non-empty. The reference digest is checkpointed after
 all required work succeeds, so a failed run can retry on the next schedule.
 
+A run handles one Kafka message and does not poll while it works, so the
+orchestrator sets its consumer's `max.poll.interval.ms` from its own timeouts:
+three `DOWNLOAD_TIMEOUT_SECONDS` plus `IMPORT_TIMEOUT_SECONDS`, plus ten minutes
+(5 100 000 ms with the defaults). Without that, a run in which every step used
+its full timeout would outlast Kafka's one-hour default, get the consumer
+evicted from its group, and could be started a second time. Keep
+`ORCHESTRATOR_RUN_TIMEOUT_SECONDS` above that worst case as well.
+
 ## Kafka deployment
 
 Copy `.env.example` to `.env`, fill in the CMS, Telegram, and Kafka security
@@ -102,10 +110,26 @@ without a heartbeat; startup and Kafka reconnection have a 180-second grace
 period. These thresholds can be changed with `HEALTH_HEARTBEAT_TIMEOUT_SECONDS`,
 `HEALTH_STARTUP_GRACE_SECONDS`, and `HEALTH_CHECK_INTERVAL_SECONDS`.
 
+A heartbeat comes from a background thread, so it proves the process is alive
+but not that it is working: a worker blocked on one message would keep sending
+it. Each heartbeat therefore also reports how long the worker has been busy
+with its current message, and the monitor sends a "stuck" alert (and a follow-up
+when the worker recovers) once that time passes `HEALTH_MAX_BUSY_SECONDS`
+(default 5400, above the orchestrator's 4500-second worst case). Services that
+should answer faster can get their own limit, for example
+`HEALTH_MAX_BUSY_OVERRIDES=core=600,notifications=120`; an unknown service name
+is rejected at startup.
+
 The monitor checks Kafka itself and sends outage and recovery messages directly
 through the Telegram Bot API, so Kafka failure does not block those alerts. If
 the health monitor process or the host loses internet access, it cannot send an
 alert about that failure; use external monitoring for host-level availability.
+
+Telegram rejects messages longer than 4096 characters, so a long change report
+(the first run, for example, lists every new article) is sent as consecutive
+messages labelled `[1/3]`, `[2/3]`, ... and split between lines or after
+commas. Delivery errors are logged without the bot token, which `requests` would
+otherwise print as part of the API URL.
 
 The scheduler runs at the start of each hour from 09:00 through 17:00 Monday to
 Friday in `Europe/Minsk`. Core downloads both source CSVs concurrently, processes

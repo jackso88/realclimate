@@ -160,3 +160,105 @@ def test_stop_without_start_only_sets_the_event():
     reporter.stop()
 
     assert reporter._stop_event.is_set()
+
+
+# ------------------------------------------------------ busy-time reporting
+
+
+def test_heartbeat_reports_zero_busy_time_by_default():
+    bus = RecordingBus()
+
+    publish_heartbeat(bus, "core")
+
+    assert bus.published[0][1].payload["busy_seconds"] == 0.0
+
+
+def test_heartbeat_reports_the_given_busy_time_rounded():
+    bus = RecordingBus()
+
+    publish_heartbeat(bus, "core", busy_seconds=125.678)
+
+    assert bus.published[0][1].payload["busy_seconds"] == 125.7
+
+
+def test_heartbeat_never_reports_negative_busy_time():
+    bus = RecordingBus()
+
+    publish_heartbeat(bus, "core", busy_seconds=-5)
+
+    assert bus.published[0][1].payload["busy_seconds"] == 0.0
+
+
+class FakeClock:
+    """Stand-in for the time module with an explicitly advanced clock."""
+
+    def __init__(self):
+        self.now = 100.0
+
+    def monotonic(self):
+        return self.now
+
+
+def install_clock(monkeypatch):
+    clock = FakeClock()
+    monkeypatch.setattr(health, "time", clock)
+    return clock
+
+
+def test_a_new_reporter_is_idle(monkeypatch):
+    install_clock(monkeypatch)
+
+    assert HeartbeatReporter(RecordingBus(), "core").busy_seconds() == 0.0
+
+
+def test_busy_time_grows_while_a_message_is_in_progress(monkeypatch):
+    clock = install_clock(monkeypatch)
+    reporter = HeartbeatReporter(RecordingBus(), "core")
+
+    reporter.mark_busy()
+    clock.now += 42.5
+
+    assert reporter.busy_seconds() == 42.5
+
+
+def test_busy_time_resets_when_the_message_is_finished(monkeypatch):
+    clock = install_clock(monkeypatch)
+    reporter = HeartbeatReporter(RecordingBus(), "core")
+    reporter.mark_busy()
+    clock.now += 10
+
+    reporter.mark_idle()
+
+    assert reporter.busy_seconds() == 0.0
+
+
+def test_busy_time_restarts_for_the_next_message(monkeypatch):
+    clock = install_clock(monkeypatch)
+    reporter = HeartbeatReporter(RecordingBus(), "core")
+    reporter.mark_busy()
+    clock.now += 500
+    reporter.mark_idle()
+
+    reporter.mark_busy()
+    clock.now += 3
+
+    assert reporter.busy_seconds() == 3.0
+
+
+def test_the_background_loop_publishes_the_current_busy_time(monkeypatch):
+    clock = install_clock(monkeypatch)
+    holder = {}
+
+    def stop_after_two(count):
+        clock.now += 30
+        if count == 2:
+            holder["reporter"]._stop_event.set()
+
+    bus = RecordingBus(on_publish=stop_after_two)
+    holder["reporter"] = HeartbeatReporter(bus, "core", interval_seconds=0)
+    holder["reporter"].mark_busy()
+
+    holder["reporter"]._publish_until_stopped()
+
+    reported = [message.payload["busy_seconds"] for _, message, _ in bus.published]
+    assert reported == [0.0, 30.0]

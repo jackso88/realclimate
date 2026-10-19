@@ -19,19 +19,28 @@ from app.messaging.topics import CORE_NOTIFICATIONS
 
 logger = logging.getLogger(__name__)
 SENSITIVE_QUERY_VALUE = re.compile(r"(?i)(access|token|password)=([^&\s]+)")
+TELEGRAM_BOT_TOKEN = re.compile(r"(?i)\b(bot)\d+:[A-Za-z0-9_-]+")
+# How long a consumer may go without polling before Kafka evicts it from the
+# group. A worker whose handler can run longer than this must raise it.
+DEFAULT_MAX_POLL_INTERVAL_MS = 3_600_000
 
 
 def sanitize_error(message: str) -> str:
-    """Redact common credential query parameters from an error string.
+    """Redact common credentials from an error string.
+
+    Covers credential query parameters (``access=``, ``token=``,
+    ``password=``) and the bot token that Telegram embeds in its API URLs
+    (``/bot123456:ABC.../sendMessage``).
 
     Args:
         message: Error text that may contain access tokens, passwords, or
-            other sensitive query values.
+            other sensitive values.
 
     Returns:
         Error text with recognized secret values replaced by ``<redacted>``.
     """
-    return SENSITIVE_QUERY_VALUE.sub(r"\1=<redacted>", message)
+    message = SENSITIVE_QUERY_VALUE.sub(r"\1=<redacted>", message)
+    return TELEGRAM_BOT_TOKEN.sub(r"\1<redacted>", message)
 
 
 class KafkaBus:
@@ -161,7 +170,7 @@ class KafkaBus:
                 # consumer has established its initial latest offset.
                 "auto.offset.reset": "earliest",
                 "max.partition.fetch.bytes": 80_000_000,
-                "max.poll.interval.ms": 3_600_000,
+                "max.poll.interval.ms": DEFAULT_MAX_POLL_INTERVAL_MS,
             }
         )
         consumer.subscribe([response_topic])
@@ -215,6 +224,7 @@ def run_consumer(
     handler: Callable[[Envelope, KafkaBus], None],
     *,
     service_name: str | None = None,
+    max_poll_interval_ms: int = DEFAULT_MAX_POLL_INTERVAL_MS,
 ) -> None:
     """Consume a topic continuously, dispatch records, and commit offsets.
 
@@ -225,7 +235,11 @@ def run_consumer(
         handler: Callback invoked with each decoded envelope and the producer
             bus used for replies.
         service_name: Optional liveness name. When provided, this consumer
-            publishes a Kafka heartbeat every 30 seconds.
+            publishes a Kafka heartbeat every 30 seconds, including how long
+            the current message has been in progress.
+        max_poll_interval_ms: Longest time the handler may take for one record
+            before Kafka considers the consumer dead and reassigns its
+            partitions. Must exceed the handler's worst-case duration.
 
     This function runs until interrupted. Handler exceptions are logged and
     the corresponding record is still committed, so the worker does not retry
@@ -245,7 +259,7 @@ def run_consumer(
             "enable.auto.commit": False,
             "auto.offset.reset": "earliest",
             "max.partition.fetch.bytes": 80_000_000,
-            "max.poll.interval.ms": 3_600_000,
+            "max.poll.interval.ms": max_poll_interval_ms,
         }
     )
     consumer.subscribe([topic])
@@ -267,11 +281,15 @@ def run_consumer(
                 raise RuntimeError(kafka_message.error().str())
 
             envelope = Envelope.decode(kafka_message.value())
+            if heartbeat_reporter:
+                heartbeat_reporter.mark_busy()
             try:
                 handler(envelope, bus)
             except Exception:
                 logger.exception("Unhandled message failure on topic %s", topic)
             finally:
+                if heartbeat_reporter:
+                    heartbeat_reporter.mark_idle()
                 consumer.commit(message=kafka_message, asynchronous=False)
     finally:
         if heartbeat_reporter:

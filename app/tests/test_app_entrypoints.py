@@ -88,7 +88,7 @@ def test_consumer_entrypoints_listen_to_their_own_topic(
     assert args.args[0] == "localhost:9092"
     assert args.args[1] == topic
     assert args.args[2] == group
-    assert args.kwargs == {"service_name": service}
+    assert args.kwargs["service_name"] == service
 
 
 def test_scheduler_entrypoint_starts_the_blocking_scheduler(monkeypatch):

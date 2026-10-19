@@ -8,7 +8,11 @@ from typing import Callable
 from confluent_kafka import Consumer, KafkaError
 from confluent_kafka.admin import AdminClient
 
-from app.health_monitor.models import HealthMonitorSettings, ServiceTransition
+from app.health_monitor.models import (
+    STUCK,
+    HealthMonitorSettings,
+    ServiceTransition,
+)
 from app.messaging.config import load_client_settings
 from app.messaging.kafka import sanitize_error
 from app.messaging.models import Envelope
@@ -26,6 +30,9 @@ class HeartbeatTracker:
         timeout_seconds: Maximum permitted heartbeat age.
         startup_grace_seconds: Grace before missing first heartbeats alert.
         started_at: Monotonic clock value at monitor startup.
+        max_busy_seconds: Longest a worker may spend on one message before it
+            is reported as stuck.
+        busy_limits: Per-service replacements for ``max_busy_seconds``.
     """
 
     def __init__(
@@ -34,14 +41,20 @@ class HeartbeatTracker:
         timeout_seconds: int,
         startup_grace_seconds: int,
         started_at: float,
+        max_busy_seconds: int = 5400,
+        busy_limits: dict[str, int] | None = None,
     ) -> None:
         self.services = services
         self.timeout_seconds = timeout_seconds
         self.startup_grace_seconds = startup_grace_seconds
         self.grace_started_at = started_at
+        self.max_busy_seconds = max_busy_seconds
+        self.busy_limits = busy_limits or {}
         self.last_seen: dict[str, float] = {}
         self.last_sent_at: dict[str, float] = {}
+        self.busy_seconds: dict[str, float] = {}
         self.status: dict[str, bool | None] = {service: None for service in services}
+        self.stuck: dict[str, bool] = {service: False for service in services}
 
     def record(
         self,
@@ -78,7 +91,29 @@ class HeartbeatTracker:
 
         self.last_sent_at[service] = float(sent_at)
         self.last_seen[service] = now_monotonic - heartbeat_age
+        self.busy_seconds[service] = self._reported_busy_seconds(message)
         return True
+
+    @staticmethod
+    def _reported_busy_seconds(message: Envelope) -> float:
+        """Read how long the sender says it has been busy with one message.
+
+        Heartbeats from older workers have no such field, and a malformed value
+        must not make the monitor reject an otherwise valid heartbeat, so both
+        count as "not busy".
+
+        Args:
+            message: A heartbeat that already passed validation.
+
+        Returns:
+            The reported busy time in seconds, or 0.0 when absent or invalid.
+        """
+        busy = message.payload.get("busy_seconds", 0)
+        if isinstance(busy, bool) or not isinstance(busy, (int, float)):
+            return 0.0
+        if not math.isfinite(busy) or busy < 0:
+            return 0.0
+        return float(busy)
 
     def begin_startup_grace(self, now_monotonic: float) -> None:
         """Restart the grace window after a Kafka outage or reconnection.
@@ -95,11 +130,17 @@ class HeartbeatTracker:
         notifications. Missing first heartbeats are ignored until the startup
         grace period expires.
 
+        A worker whose heartbeats keep arriving can still be stuck: the
+        heartbeat comes from a background thread, so it continues while the main
+        loop is blocked on one message. Such a worker is reported once its
+        reported busy time passes its limit, and again when it recovers.
+
         Args:
             now_monotonic: Current monotonic time.
 
         Returns:
-            Outage and recovery transitions since the previous evaluation.
+            Outage, recovery, stuck and unstuck transitions since the previous
+            evaluation.
         """
         transitions = []
         for service in self.services:
@@ -122,7 +163,69 @@ class HeartbeatTracker:
                 transitions.append(ServiceTransition(service, available))
             elif previous is None and not available:
                 transitions.append(ServiceTransition(service, False))
+
+            if not available:
+                # An outage is reported on its own; "stuck" only describes a
+                # worker that is still alive.
+                self.stuck[service] = False
+                continue
+            limit = self.busy_limits.get(service, self.max_busy_seconds)
+            busy = self.busy_seconds.get(service, 0.0)
+            is_stuck = busy > limit
+            if is_stuck != self.stuck[service]:
+                self.stuck[service] = is_stuck
+                transitions.append(
+                    ServiceTransition(
+                        service,
+                        available=not is_stuck,
+                        kind=STUCK,
+                        busy_seconds=busy,
+                        limit_seconds=limit,
+                    )
+                )
         return transitions
+
+
+def _format_duration(seconds: float) -> str:
+    """Format a duration for an alert: seconds when short, minutes otherwise.
+
+    Args:
+        seconds: Duration in seconds.
+
+    Returns:
+        Text such as ``"45 с"`` or ``"90 мин"``.
+    """
+    if seconds < 120:
+        return f"{int(seconds)} с"
+    return f"{int(seconds // 60)} мин"
+
+
+def _transition_text(transition: ServiceTransition, timeout_seconds: int) -> str:
+    """Build the Telegram text for one service state change.
+
+    Args:
+        transition: Newly observed state change.
+        timeout_seconds: Heartbeat deadline used in outage text.
+
+    Returns:
+        The message to send to the administrator.
+    """
+    service = transition.service
+    if transition.kind == STUCK:
+        if transition.available:
+            return f"✅ Сервис «{service}» завершил обработку сообщения."
+        return (
+            f"⚠️ Сервис «{service}» уже {_format_duration(transition.busy_seconds)} "
+            "обрабатывает одно сообщение (лимит "
+            f"{_format_duration(transition.limit_seconds)}). Процесс отвечает, "
+            "но, возможно, завис."
+        )
+    if transition.available:
+        return f"✅ Сервис «{service}» восстановил связь."
+    return (
+        f"🚨 Сервис «{service}» недоступен: heartbeat не поступал "
+        f"более {timeout_seconds} секунд."
+    )
 
 
 def _send_transition(
@@ -133,17 +236,11 @@ def _send_transition(
     """Send one service state change directly to the administrator in Telegram.
 
     Args:
-        transition: Newly observed up/down state.
+        transition: Newly observed state change.
         timeout_seconds: Heartbeat deadline used in outage text.
         notifier: Telegram message callback, injectable for unit tests.
     """
-    if transition.available:
-        text = f"✅ Сервис «{transition.service}» восстановил связь."
-    else:
-        text = (
-            f"🚨 Сервис «{transition.service}» недоступен: heartbeat не поступал "
-            f"более {timeout_seconds} секунд."
-        )
+    text = _transition_text(transition, timeout_seconds)
     try:
         notifier(text)
     except Exception:
@@ -226,6 +323,8 @@ def run_health_monitor(
         settings.heartbeat_timeout_seconds,
         settings.startup_grace_seconds,
         monotonic_now,
+        max_busy_seconds=settings.max_busy_seconds,
+        busy_limits=settings.busy_limit_overrides,
     )
     kafka_available: bool | None = None
     next_broker_check = 0.0
@@ -298,6 +397,14 @@ def run_health_monitor(
 
             if kafka_available:
                 for transition in tracker.evaluate(monotonic_now):
+                    if transition.kind == STUCK and not transition.available:
+                        logger.warning(
+                            "Service %s has handled one message for %.0f s "
+                            "(limit %d s)",
+                            transition.service,
+                            transition.busy_seconds,
+                            transition.limit_seconds,
+                        )
                     pending_alerts.append(("service", transition, None))
 
             if pending_alerts and monotonic_now >= next_alert_attempt:

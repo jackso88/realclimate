@@ -23,7 +23,10 @@ def test_load_settings_uses_defaults(monkeypatch):
 
 def test_load_settings_reads_services_and_timing(monkeypatch):
     monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "broker:9093")
-    monkeypatch.setenv("HEALTH_MONITORED_SERVICES", "core, uploader,core")
+    monkeypatch.setenv(
+        "HEALTH_MONITORED_SERVICES",
+        "core, uploader, notifications, downloader_current, downloader_reference",
+    )
     monkeypatch.setenv("HEALTH_HEARTBEAT_TIMEOUT_SECONDS", "45")
     monkeypatch.setenv("HEALTH_STARTUP_GRACE_SECONDS", "90")
     monkeypatch.setenv("HEALTH_CHECK_INTERVAL_SECONDS", "5")
@@ -31,7 +34,13 @@ def test_load_settings_reads_services_and_timing(monkeypatch):
     settings = load_settings()
 
     assert settings.bootstrap_servers == "broker:9093"
-    assert settings.monitored_services == ("core", "uploader")
+    assert settings.monitored_services == (
+        "core",
+        "uploader",
+        "notifications",
+        "downloader_current",
+        "downloader_reference",
+    )
     assert settings.heartbeat_timeout_seconds == 45
     assert settings.startup_grace_seconds == 90
     assert settings.check_interval_seconds == 5
