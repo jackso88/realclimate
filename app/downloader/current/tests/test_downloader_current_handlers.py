@@ -9,10 +9,7 @@ from app.downloader.current import consumer, producer
 from app.downloader.current.models import DownloadedCsv
 from app.messaging.models import Envelope
 from app.messaging.payloads import decode_bytes
-from app.messaging.topics import (
-    CURRENT_DOWNLOAD_REQUESTS,
-    CURRENT_DOWNLOAD_RESPONSES,
-)
+from app.messaging.topics import CURRENT_DOWNLOAD_REQUESTS, CURRENT_DOWNLOAD_RESPONSES
 
 
 def make_request():

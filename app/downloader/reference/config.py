@@ -10,57 +10,18 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import ValidationError
 
 from app.downloader.reference.exceptions import ReferenceConfigurationError
-from app.downloader.reference.models import Settings
+from app.downloader.reference.models import ReferenceDownloaderEnvironment, Settings
 
 # Regex that extracts the spreadsheet ID from a full Google Sheets URL.
 SPREADSHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
 # OAuth2 scopes required to read Google Sheets.
 SCOPES: tuple[str, ...] = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
-
-
-class ReferenceDownloaderEnvironment(BaseModel):
-    """Validated environment values consumed by the reference downloader.
-
-    Args:
-        spreadsheet_url: Google Sheets URL or raw spreadsheet ID.
-        sheet_name: Worksheet title to download.
-        auth_mode: ``user`` for OAuth or ``service_account`` for service access.
-        credentials_file: Optional OAuth client secret for user auth/fallback.
-        token_file: Optional persisted OAuth token for user auth/fallback.
-        service_account_file: Service-account key JSON used by service mode.
-        bootstrap_servers: Kafka broker addresses for this worker.
-    """
-
-    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
-
-    spreadsheet_url: str = Field(validation_alias="GOOGLE_SHEET_URL", min_length=1)
-    sheet_name: str = Field(validation_alias="GOOGLE_SHEET_NAME", min_length=1)
-    auth_mode: Literal["user", "service_account"] = Field(
-        default="user", validation_alias="GOOGLE_AUTH_MODE"
-    )
-    credentials_file: Path | None = Field(
-        default=None, validation_alias="GOOGLE_CREDENTIALS_FILE"
-    )
-    token_file: Path | None = Field(default=None, validation_alias="GOOGLE_TOKEN_FILE")
-    service_account_file: Path | None = Field(
-        default=None, validation_alias="GOOGLE_SERVICE_ACCOUNT_FILE"
-    )
-    bootstrap_servers: str = Field(
-        default="localhost:9092", validation_alias="KAFKA_BOOTSTRAP_SERVERS"
-    )
-
-    @field_validator("auth_mode", mode="before")
-    @classmethod
-    def normalize_auth_mode(cls, value: object) -> object:
-        """Normalize user-provided auth mode to the supported lowercase form."""
-        return value.strip().lower() if isinstance(value, str) else value
 
 
 def extract_spreadsheet_id(value: str) -> str:

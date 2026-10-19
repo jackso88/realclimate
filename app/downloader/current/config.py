@@ -5,32 +5,10 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from app.downloader.current.exceptions import ConfigurationError
-from app.downloader.current.models import Settings
-
-
-class CurrentDownloaderConfig(BaseModel):
-    """Validated environment configuration for the CMS export worker.
-
-    Args:
-        cms_url: HTTP or HTTPS CMS API base URL.
-        shop_id: Positive CMS shop identifier.
-        ver_id: Positive CMS version identifier.
-        access: CMS access parameter, preserved without URL decoding.
-        bootstrap_servers: Kafka broker addresses for this worker.
-    """
-
-    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
-
-    cms_url: str = Field(validation_alias="TAPTOP_CMS_URL", min_length=1)
-    shop_id: int = Field(validation_alias="TAPTOP_SHOP_ID", gt=0)
-    ver_id: int = Field(validation_alias="TAPTOP_VER_ID", gt=0)
-    access: str = Field(validation_alias="TAPTOP_ACCESS", min_length=1)
-    bootstrap_servers: str = Field(
-        default="localhost:9092", validation_alias="KAFKA_BOOTSTRAP_SERVERS"
-    )
+from app.downloader.current.models import CurrentDownloaderConfig, Settings
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:

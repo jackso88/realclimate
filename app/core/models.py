@@ -3,9 +3,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional, Union
-
-from pydantic import BaseModel, ConfigDict, Field
 
 # Type of the persistent duplicate-code mapping. The key uniquely (and
 # stably) identifies one physical duplicate row:
@@ -13,6 +12,15 @@ from pydantic import BaseModel, ConfigDict, Field
 # "occurrence" starts at 1 and disambiguates the rare case where the
 # same code AND the same model repeat verbatim (e.g. identical
 # consumables listed twice).
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
+
 DuplicateKey = tuple[str, str, int]
 DuplicateMap = dict[DuplicateKey, str]
 
@@ -228,3 +236,24 @@ class CorePipelineOutput(BaseModel):
     excluded_csv: bytes
     detailed_changes: list[str]
     updated_duplicate_map: DuplicateMap
+
+
+class CoreSettings(BaseModel):
+    """Validated storage and Kafka settings for the core service.
+
+    Args:
+        bootstrap_servers: Kafka broker addresses.
+        excluded_csv_path: Path where the manual-review CSV is persisted.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    bootstrap_servers: str = Field(
+        default="localhost:9092",
+        validation_alias="KAFKA_BOOTSTRAP_SERVERS",
+        min_length=1,
+    )
+    excluded_csv_path: Path = Field(
+        default=Path("/app/storage/outputs/for_zalivka_excluded.csv"),
+        validation_alias="EXCLUDED_CSV_PATH",
+    )

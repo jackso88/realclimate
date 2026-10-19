@@ -1,8 +1,8 @@
 """URL, upload response, and queue HTML helpers for the uploader."""
 
 import json
-from pathlib import Path
 import secrets
+from pathlib import Path
 from urllib.parse import unquote, urljoin
 
 from bs4 import BeautifulSoup

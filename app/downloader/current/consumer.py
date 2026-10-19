@@ -6,18 +6,15 @@ from functools import partial
 from app.admin_auth.producer import request_session
 from app.downloader.current.config import configure_logging, load_settings
 from app.downloader.current.models import Settings
+from app.downloader.current.producer import publish_download
 from app.downloader.current.queue_processor import (
-    download_latest_export_content,
     delete_archive_from_admin,
+    download_latest_export_content,
     get_latest_export_cron_num,
     start_product_export,
 )
-from app.downloader.current.producer import publish_download, response_topic
 from app.messaging.kafka import publish_reply, run_consumer
-from app.messaging.topics import (
-    ADMIN_AUTH_CURRENT_RESPONSES,
-    CURRENT_DOWNLOAD_REQUESTS,
-)
+from app.messaging.topics import ADMIN_AUTH_CURRENT_RESPONSES, CURRENT_DOWNLOAD_REQUESTS
 
 logger = logging.getLogger(__name__)
 

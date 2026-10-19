@@ -1,7 +1,7 @@
 """Reference data downloader from Google Sheets."""
 
-from .google_oauth import get_credentials
 from .config import SCOPES, extract_spreadsheet_id, load_settings
+from .google_oauth import get_credentials
 from .models import Settings
 from .utils import serialize_data_to_csv
 

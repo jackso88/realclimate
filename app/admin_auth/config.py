@@ -5,56 +5,10 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from app.admin_auth.exceptions import AdminLoginError
-from app.admin_auth.models import AdminSettings
-
-
-class AdminEnvironment(BaseModel):
-    """Validated environment values consumed by the admin-auth service.
-
-    Args:
-        base_url: Public admin site origin.
-        cms_url: CMS API origin and base path.
-        username: Admin account name.
-        password: Admin account password, hidden from representations.
-        access: CMS access parameter.
-        ver_id: Positive CMS version ID.
-        design_id: Positive CMS design ID.
-        session_cache_ttl_seconds: Positive auth-session cache lifetime.
-        login_path: Login endpoint path.
-        mosaic_path: Post-login CMS path.
-        form_name: Login form identifier.
-        username_field: Username input name.
-        password_field: Password input name.
-        bootstrap_servers: Kafka brokers for this worker.
-    """
-
-    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
-
-    base_url: str = Field(validation_alias="TAPTOP_BASE_URL", min_length=1)
-    cms_url: str = Field(validation_alias="TAPTOP_CMS_URL", min_length=1)
-    username: str = Field(validation_alias="TAPTOP_USERNAME", min_length=1)
-    password: str = Field(validation_alias="TAPTOP_PASSWORD", min_length=1, repr=False)
-    access: str = Field(validation_alias="TAPTOP_ACCESS", min_length=1)
-    ver_id: int = Field(validation_alias="TAPTOP_VER_ID", gt=0)
-    design_id: int = Field(validation_alias="TAPTOP_DESIGN_ID", gt=0)
-    session_cache_ttl_seconds: int = Field(
-        default=14400, validation_alias="ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS", gt=0
-    )
-    login_path: str = Field(default="/login", validation_alias="TAPTOP_LOGIN_PATH")
-    mosaic_path: str = Field(default="/mosaic", validation_alias="TAPTOP_MOSAIC_PATH")
-    form_name: str = Field(default="login_form", validation_alias="TAPTOP_FORM_NAME")
-    username_field: str = Field(
-        default="email", validation_alias="TAPTOP_USERNAME_FIELD"
-    )
-    password_field: str = Field(
-        default="password", validation_alias="TAPTOP_PASSWORD_FIELD"
-    )
-    bootstrap_servers: str = Field(
-        default="localhost:9092", validation_alias="KAFKA_BOOTSTRAP_SERVERS"
-    )
+from app.admin_auth.models import AdminEnvironment, AdminSettings
 
 
 def load_settings(env_file: str | Path | None = None) -> AdminSettings:

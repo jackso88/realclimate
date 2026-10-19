@@ -3,8 +3,9 @@
 import logging
 
 from app.messaging.kafka import KafkaBus
-from app.messaging.topics import ORCHESTRATOR_RUNS, ORCHESTRATOR_RUN_RESPONSES
-from app.scheduler.config import SchedulerSettings, load_settings
+from app.messaging.topics import ORCHESTRATOR_RUN_RESPONSES, ORCHESTRATOR_RUNS
+from app.scheduler.config import load_settings
+from app.scheduler.models import SchedulerSettings
 
 logger = logging.getLogger(__name__)
 

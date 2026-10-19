@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.orchestrator import config
+from app.orchestrator import models
 from app.orchestrator.config import load_settings
 from app.orchestrator.models import OrchestratorSettings
 
@@ -23,7 +23,7 @@ def clean_environment(monkeypatch):
 
 
 def test_load_settings_defaults_and_hostname_identity(monkeypatch):
-    monkeypatch.setattr(config, "socket", SimpleNamespace(gethostname=lambda: "host-1"))
+    monkeypatch.setattr(models, "socket", SimpleNamespace(gethostname=lambda: "host-1"))
 
     settings = load_settings()
 

@@ -3,8 +3,9 @@
 import logging
 from functools import partial
 
-from app.core.config import CoreSettings, configure_logging, load_settings
+from app.core.config import configure_logging, load_settings
 from app.core.duplicate_mapping import DUPLICATE_CODE_MAP
+from app.core.models import CoreSettings
 from app.core.pipeline import (
     decode_duplicate_map,
     encode_duplicate_map,

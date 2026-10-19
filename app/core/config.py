@@ -2,30 +2,10 @@
 
 import logging
 import os
-from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
-
-class CoreSettings(BaseModel):
-    """Validated storage and Kafka settings for the core service.
-
-    Args:
-        bootstrap_servers: Kafka broker addresses.
-        excluded_csv_path: Path where the manual-review CSV is persisted.
-    """
-
-    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
-
-    bootstrap_servers: str = Field(
-        default="localhost:9092",
-        validation_alias="KAFKA_BOOTSTRAP_SERVERS",
-        min_length=1,
-    )
-    excluded_csv_path: Path = Field(
-        default=Path("/app/storage/outputs/for_zalivka_excluded.csv"),
-        validation_alias="EXCLUDED_CSV_PATH",
-    )
+from app.core.models import CoreSettings
 
 
 def load_settings() -> CoreSettings:

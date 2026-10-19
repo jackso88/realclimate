@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app.health_monitor.config import HealthMonitorEnvironment
+from app.health_monitor.models import HealthMonitorEnvironment
 from app.messaging import topics
 from app.orchestrator.consumer import max_poll_interval_ms
 from app.orchestrator.models import OrchestratorSettings

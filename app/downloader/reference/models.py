@@ -3,7 +3,14 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
 
 
 class Settings(BaseModel):
@@ -40,3 +47,41 @@ class Settings(BaseModel):
         if self.auth_mode == "service_account" and self.service_account_file is None:
             raise ValueError("service_account auth mode requires a key file")
         return self
+
+
+class ReferenceDownloaderEnvironment(BaseModel):
+    """Validated environment values consumed by the reference downloader.
+
+    Args:
+        spreadsheet_url: Google Sheets URL or raw spreadsheet ID.
+        sheet_name: Worksheet title to download.
+        auth_mode: ``user`` for OAuth or ``service_account`` for service access.
+        credentials_file: Optional OAuth client secret for user auth/fallback.
+        token_file: Optional persisted OAuth token for user auth/fallback.
+        service_account_file: Service-account key JSON used by service mode.
+        bootstrap_servers: Kafka broker addresses for this worker.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    spreadsheet_url: str = Field(validation_alias="GOOGLE_SHEET_URL", min_length=1)
+    sheet_name: str = Field(validation_alias="GOOGLE_SHEET_NAME", min_length=1)
+    auth_mode: Literal["user", "service_account"] = Field(
+        default="user", validation_alias="GOOGLE_AUTH_MODE"
+    )
+    credentials_file: Path | None = Field(
+        default=None, validation_alias="GOOGLE_CREDENTIALS_FILE"
+    )
+    token_file: Path | None = Field(default=None, validation_alias="GOOGLE_TOKEN_FILE")
+    service_account_file: Path | None = Field(
+        default=None, validation_alias="GOOGLE_SERVICE_ACCOUNT_FILE"
+    )
+    bootstrap_servers: str = Field(
+        default="localhost:9092", validation_alias="KAFKA_BOOTSTRAP_SERVERS"
+    )
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def normalize_auth_mode(cls, value: object) -> object:
+        """Normalize user-provided auth mode to the supported lowercase form."""
+        return value.strip().lower() if isinstance(value, str) else value

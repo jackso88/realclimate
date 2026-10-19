@@ -1,7 +1,7 @@
 """Tests for the core request/reply processing contract."""
 
-from app.core.models import CorePipelineOutput
 from app.core import consumer
+from app.core.models import CorePipelineOutput
 from app.messaging.models import Envelope
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (

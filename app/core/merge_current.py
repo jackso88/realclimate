@@ -24,8 +24,8 @@ from collections import defaultdict
 from typing import Optional
 
 from app.core.exceptions import CurrentCatalogError
-from app.core.utils import build_unique_sef_url, parse_amount, parse_price
 from app.core.models import DuplicateMap, ExcludedRecord, MergeResult, ProductRecord
+from app.core.utils import build_unique_sef_url, parse_amount, parse_price
 
 CSV_DELIMITER = ";"
 CSV_ENCODING = "utf-8-sig"  # BOM so Excel detects UTF-8/Cyrillic correctly

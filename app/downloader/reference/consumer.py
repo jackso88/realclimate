@@ -5,18 +5,18 @@ from functools import partial
 
 import gspread
 
-from app.downloader.reference.google_oauth import (
-    get_credentials,
-    get_service_account_credentials,
-)
-from app.downloader.reference.exceptions import ReferenceAuthenticationError
-from app.downloader.reference.models import Settings
 from app.downloader.reference.config import (
     SCOPES,
     configure_logging,
     extract_spreadsheet_id,
     load_settings,
 )
+from app.downloader.reference.exceptions import ReferenceAuthenticationError
+from app.downloader.reference.google_oauth import (
+    get_credentials,
+    get_service_account_credentials,
+)
+from app.downloader.reference.models import Settings
 from app.downloader.reference.producer import publish_reference_csv
 from app.downloader.reference.utils import serialize_data_to_csv
 from app.messaging.kafka import publish_reply, run_consumer

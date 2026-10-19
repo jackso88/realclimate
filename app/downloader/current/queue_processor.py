@@ -1,10 +1,10 @@
 """Submit exports and manage their files in the admin queue."""
 
-from io import BytesIO
 import json
 import logging
-from pathlib import Path
 import secrets
+from io import BytesIO
+from pathlib import Path
 from time import monotonic, sleep
 from urllib.parse import unquote, urljoin, urlparse
 from zipfile import BadZipFile, ZipFile
@@ -12,13 +12,12 @@ from zipfile import BadZipFile, ZipFile
 import requests
 from bs4 import BeautifulSoup
 
-from app.downloader.current.config import Settings
 from app.downloader.current.exceptions import (
     AdminFileNotFoundError,
     ExportArchiveError,
     ExportNotReadyError,
 )
-from app.downloader.current.models import DownloadedCsv
+from app.downloader.current.models import DownloadedCsv, Settings
 
 logger = logging.getLogger(__name__)
 

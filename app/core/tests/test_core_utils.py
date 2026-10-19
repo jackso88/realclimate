@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.models import ProductRecord
 from app.core.utils import (
     assign_duplicate_codes,
     build_unique_sef_url,
@@ -22,7 +23,6 @@ from app.core.utils import (
     slugify,
     transliterate_ru,
 )
-from app.core.models import ProductRecord
 
 # --------------------------------------------------------------------------
 # normalize_ws

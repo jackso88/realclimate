@@ -4,7 +4,16 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 from uuid import uuid4
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 
 class Envelope(BaseModel):
@@ -156,3 +165,21 @@ class KafkaClientSettings(BaseModel):
             raise ValueError(
                 f"Missing or invalid Kafka property: {property_name}"
             ) from error
+
+
+class KafkaEnvironment(BaseModel):
+    """Validated Kafka credentials and certificate paths from the environment.
+
+    Args:
+        username: SASL/SCRAM username.
+        password: SASL/SCRAM password; hidden from representations.
+        ca_location: File path to the trusted Kafka CA bundle.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    username: str = Field(validation_alias="KAFKA_SASL_USERNAME", min_length=1)
+    password: str = Field(
+        validation_alias="KAFKA_SASL_PASSWORD", min_length=1, repr=False
+    )
+    ca_location: str = Field(validation_alias="KAFKA_SSL_CA_LOCATION", min_length=1)

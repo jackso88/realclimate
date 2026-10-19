@@ -2,7 +2,8 @@
 
 import pytest
 
-from app.health_monitor.config import HealthMonitorEnvironment, load_settings
+from app.health_monitor.config import load_settings
+from app.health_monitor.models import HealthMonitorEnvironment
 
 
 def test_load_settings_uses_defaults(monkeypatch):

@@ -6,9 +6,9 @@ from functools import partial
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.scheduler.config import configure_logging, load_settings
 from app.messaging.health import HeartbeatReporter
 from app.messaging.kafka import KafkaBus
+from app.scheduler.config import configure_logging, load_settings
 from app.scheduler.producer import publish_workflow_run
 
 logger = logging.getLogger(__name__)
