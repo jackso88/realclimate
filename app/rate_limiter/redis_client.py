@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import socket
 from urllib.parse import unquote, urlsplit
-
-
-class RedisCommandError(RuntimeError):
-    """Raised when Redis rejects a command."""
+from app.rate_limiter.exceptions import RedisCommandError
 
 
 class RedisClient:
