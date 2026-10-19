@@ -14,6 +14,12 @@ from app.messaging.exceptions import RetryableMessageError
 from app.messaging.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
 
 
+@pytest.fixture(autouse=True)
+def bypass_rate_limit_setup(monkeypatch):
+    """Keep handler tests independent of Kafka infrastructure."""
+    monkeypatch.setattr(consumer, "rate_limit_session", lambda session, *_: session)
+
+
 def make_request():
     return Envelope.create(
         "reference_downloaded",

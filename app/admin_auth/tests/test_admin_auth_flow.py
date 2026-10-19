@@ -51,8 +51,14 @@ def test_posts_credentials_then_follows_redirect(monkeypatch):
     session.post = Mock(return_value=login_response)
     session.get = Mock(side_effect=[redirect_response, mosaic_response])
     monkeypatch.setattr("app.admin_auth.auth.requests.Session", lambda: session)
+    rate_limit = Mock(side_effect=lambda value, *_: value)
+    monkeypatch.setattr("app.admin_auth.auth.rate_limit_session", rate_limit)
 
     snapshot = create_session_snapshot(make_settings())
+
+    rate_limit.assert_called_once_with(
+        session, "localhost:9092", "admin_auth", "cms:account"
+    )
 
     session.post.assert_called_once_with(
         "https://admin.invalid/login",

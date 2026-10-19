@@ -8,6 +8,7 @@ from app.messaging.kafka import sanitize_error
 from app.notifications.config import load_settings
 from app.notifications.models import NotificationSettings
 from app.notifications.exceptions import TelegramDeliveryError
+from app.messaging.rate_limit import acquire_rate_limit
 
 
 def _split_long_line(line: str, limit: int) -> list[str]:
@@ -87,7 +88,9 @@ def _telegram_description(response) -> str:
         return ""
 
 
-def _send_part(token: str, chat_id: str, text: str, timeout: float) -> None:
+def _send_part(
+    token: str, chat_id: str, text: str, timeout: float, bootstrap_servers: str
+) -> None:
     """Send one already-sized message and raise a token-free error on failure.
 
     Args:
@@ -100,6 +103,7 @@ def _send_part(token: str, chat_id: str, text: str, timeout: float) -> None:
         TelegramDeliveryError: If the request fails or Telegram rejects it.
     """
     try:
+        acquire_rate_limit(bootstrap_servers, "notifications", "telegram:admin_chat")
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={"chat_id": chat_id, "text": text},
@@ -158,6 +162,12 @@ def send_telegram_message(
             part = f"[{number}/{len(parts)}]\n{part}"
         if len(part) > settings.telegram_message_limit:
             raise TelegramDeliveryError("Telegram message exceeds its configured limit")
-        _send_part(token, chat_id, part, request_timeout)
+        _send_part(
+            token,
+            chat_id,
+            part,
+            request_timeout,
+            settings.bootstrap_servers,
+        )
         if number < len(parts):
             time.sleep(settings.pause_between_parts_seconds)

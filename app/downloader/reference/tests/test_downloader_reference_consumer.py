@@ -24,6 +24,7 @@ def test_reference_sync_publishes_changed_csv_with_pipeline_correlation(monkeypa
     authorize = Mock(return_value=client)
     publish = Mock(return_value=True)
     failure = Mock()
+    rate_limit = Mock()
     monkeypatch.setattr(consumer, "load_settings", lambda: settings)
     monkeypatch.setattr(consumer, "extract_spreadsheet_id", lambda _: "fake-sheet-id")
     monkeypatch.setattr(consumer, "get_credentials", Mock(return_value="credentials"))
@@ -31,12 +32,14 @@ def test_reference_sync_publishes_changed_csv_with_pipeline_correlation(monkeypa
     monkeypatch.setattr(consumer, "serialize_data_to_csv", lambda _: b"name\nItem A\n")
     monkeypatch.setattr(consumer, "publish_reference_if_changed", publish)
     monkeypatch.setattr(consumer, "publish_failure", failure)
+    monkeypatch.setattr(consumer, "rate_limit_google_client", rate_limit)
     message = Envelope.create("sync_reference", {}, correlation_id="pipeline-123")
     bus = object()
 
     consumer.handle_request(message, bus)
 
     client.open_by_key.assert_called_once_with("fake-sheet-id")
+    rate_limit.assert_called_once_with(client, "localhost:9092")
     spreadsheet.worksheet.assert_called_once_with("Products")
     worksheet.get_all_values.assert_called_once_with()
     publish.assert_called_once_with(bus, message, b"name\nItem A\n")

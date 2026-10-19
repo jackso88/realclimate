@@ -57,6 +57,12 @@ or uploader confirms a successful import. If a downstream step fails, the next
 scheduled sync retries the pipeline even when the spreadsheet bytes are still
 the same.
 
+### Service architecture
+
+<p align="center">
+  <img src="docs/assets/service-architecture.svg" alt="RealClimate service architecture, Kafka event flow, Redis-backed rate limiter, and external APIs" width="100%">
+</p>
+
 ## Kafka deployment
 
 Copy `.env.example` to `.env`, fill in the CMS, Telegram, and Kafka security
@@ -78,6 +84,23 @@ Telegram token goes to `notifications` and `health_monitor`, and CMS login
 credentials are passed only to `admin_auth`.
 The admin authentication service caches its serialized session snapshot for
 `ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS` (default: 4 hours).
+
+All outbound CMS, Google Sheets, and Telegram HTTP calls obtain a permit from
+the `rate_limiter` service before sending. Redis stores a shared next-permit
+time per account/API bucket, so replicas do not exceed the same limit. If Kafka
+or Redis cannot grant a permit, the HTTP call is held and the message is retried
+later. Defaults leave roughly 10% headroom: CMS requests are spaced by 5.5 s,
+Google Sheets calls by 1.112 s, and messages to the administrator chat by
+3.334 s. These can be adjusted with `RATE_LIMIT_CMS_MIN_INTERVAL_MS`,
+`RATE_LIMIT_GOOGLE_SHEETS_MIN_INTERVAL_MS`, and
+`RATE_LIMIT_TELEGRAM_CHAT_MIN_INTERVAL_MS`.
+
+The Google interval follows the documented 60 requests/minute/user/project
+Sheets API quota; the Telegram interval follows the 20 messages/minute group
+limit. CMS has no published quota for this account, so it uses the requested
+5-second minimum with 10% additional spacing. See the official provider docs:
+[Google Sheets API usage limits](https://developers.google.com/workspace/sheets/api/limits)
+and [Telegram bot FAQ](https://core.telegram.org/bots/faq).
 
 Long-running application containers and the Kafka broker use the
 `unless-stopped` restart policy. To start them automatically after a system
@@ -120,9 +143,11 @@ should answer faster can get their own limit, for example
 is rejected at startup.
 
 The monitor checks Kafka itself and sends outage and recovery messages directly
-through the Telegram Bot API, so Kafka failure does not block those alerts. If
-the health monitor process or the host loses internet access, it cannot send an
-alert about that failure; use external monitoring for host-level availability.
+through the Telegram Bot API. These messages also pass through the shared
+rate-limiter, so Kafka or Redis outages can delay the alert until a permit path
+is available again. If the health monitor process or the host loses internet
+access, it cannot send an alert about that failure; use external monitoring for
+host-level availability.
 
 Telegram rejects messages longer than 4096 characters, so a long change report
 (the first run, for example, lists every new article) is sent as consecutive

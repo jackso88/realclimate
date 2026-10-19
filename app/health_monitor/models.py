@@ -95,6 +95,7 @@ class HealthMonitorEnvironment(BaseModel):
         "uploader",
         "scheduler",
         "notifications",
+        "rate_limiter",
     )
 
     bootstrap_servers: str = Field(

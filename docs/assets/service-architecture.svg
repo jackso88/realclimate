@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
+  <title id="title">RealClimate catalogue updater service architecture</title>
+  <desc id="desc">Event-driven catalogue synchronization with Kafka, Redis, a shared rate limiter, CMS and Google Sheets APIs, and Telegram notifications.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101b32"/>
+      <stop offset="1" stop-color="#182d49"/>
+    </linearGradient>
+    <linearGradient id="bus" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#176b87"/>
+      <stop offset="0.5" stop-color="#247b91"/>
+      <stop offset="1" stop-color="#176b87"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#07101f" flood-opacity=".32"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1 1 11 6 1 11z" fill="#86a6c6"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1 1 11 6 1 11z" fill="#62d8b2"/>
+    </marker>
+    <marker id="arrowAmber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1 1 11 6 1 11z" fill="#f0bf69"/>
+    </marker>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .title { fill:#f4f8ff; font-size:38px; font-weight:750; letter-spacing:.2px; }
+      .subtitle { fill:#a8bbd2; font-size:18px; }
+      .card { fill:#f5f8fc; stroke:#dce6f0; stroke-width:1.5; }
+      .cardTitle { fill:#182b45; font-size:20px; font-weight:720; }
+      .cardText { fill:#52667e; font-size:15px; }
+      .tag { fill:#e4f4ef; }
+      .tagText { fill:#17775d; font-size:12px; font-weight:700; letter-spacing:.7px; }
+      .topic { fill:#143f5a; stroke:#4fa4b8; stroke-width:1; }
+      .topicText { fill:#e5fbff; font-size:14px; font-weight:650; }
+      .label { fill:#d6e2ef; font-size:14px; font-weight:600; }
+      .tiny { fill:#9fb3ca; font-size:13px; }
+      .apiTitle { fill:#f2f7fc; font-size:18px; font-weight:700; }
+      .apiText { fill:#b4c5d9; font-size:14px; }
+      .serviceLink { fill:none; stroke:#86a6c6; stroke-width:3; marker-end:url(#arrow); }
+      .httpLink { fill:none; stroke:#62d8b2; stroke-width:3; marker-end:url(#arrowGreen); }
+      .permitLink { fill:none; stroke:#f0bf69; stroke-width:2.5; stroke-dasharray:8 7; marker-end:url(#arrowAmber); }
+      .heartLink { fill:none; stroke:#ae9bea; stroke-width:2.5; stroke-dasharray:4 7; marker-end:url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1120" rx="28" fill="url(#bg)"/>
+  <circle cx="1660" cy="82" r="190" fill="#37b5aa" opacity=".07"/>
+  <circle cx="130" cy="1050" r="220" fill="#5978cf" opacity=".08"/>
+
+  <text x="72" y="76" class="title">RealClimate · catalogue automation</text>
+  <text x="74" y="110" class="subtitle">Event-driven sync: downstream processing runs only when the reference data changes</text>
+
+  <!-- Core workflow services -->
+  <g filter="url(#shadow)">
+    <rect x="65" y="158" width="245" height="150" rx="18" class="card"/>
+    <rect x="84" y="177" width="72" height="24" rx="12" class="tag"/>
+    <text x="98" y="194" class="tagText">TIMER</text>
+    <text x="84" y="235" class="cardTitle">Scheduler</text>
+    <text x="84" y="262" class="cardText">Weekdays, 09:00–17:00</text>
+    <text x="84" y="284" class="cardText">Starts reference sync</text>
+
+    <rect x="365" y="158" width="265" height="150" rx="18" class="card"/>
+    <rect x="384" y="177" width="95" height="24" rx="12" class="tag"/>
+    <text x="398" y="194" class="tagText">SOURCE A</text>
+    <text x="384" y="235" class="cardTitle">Reference downloader</text>
+    <text x="384" y="262" class="cardText">Reads the sheet and compares its hash</text>
+    <text x="384" y="284" class="cardText">No changes: downstream work stops</text>
+
+    <rect x="690" y="158" width="260" height="150" rx="18" class="card"/>
+    <rect x="709" y="177" width="95" height="24" rx="12" class="tag"/>
+    <text x="723" y="194" class="tagText">SOURCE B</text>
+    <text x="709" y="235" class="cardTitle">Current downloader</text>
+    <text x="709" y="262" class="cardText">Exports the catalogue from the CMS</text>
+    <text x="709" y="284" class="cardText">Runs only after a reference change</text>
+
+    <rect x="1010" y="158" width="260" height="150" rx="18" class="card"/>
+    <rect x="1029" y="177" width="70" height="24" rx="12" class="tag"/>
+    <text x="1043" y="194" class="tagText">CORE</text>
+    <text x="1029" y="235" class="cardTitle">Core</text>
+    <text x="1029" y="262" class="cardText">Pairs CSV inputs by correlation_id</text>
+    <text x="1029" y="284" class="cardText">Publishes results and change details</text>
+
+    <rect x="1330" y="158" width="260" height="150" rx="18" class="card"/>
+    <rect x="1349" y="177" width="92" height="24" rx="12" class="tag"/>
+    <text x="1363" y="194" class="tagText">DELIVERY</text>
+    <text x="1349" y="235" class="cardTitle">Uploader</text>
+    <text x="1349" y="262" class="cardText">Imports processed.csv</text>
+    <text x="1349" y="284" class="cardText">Only when detailed changes exist</text>
+  </g>
+
+  <!-- Directional flow annotations -->
+  <path d="M310 231 H350" class="serviceLink"/>
+  <text x="314" y="216" class="tiny">sync request</text>
+  <path d="M630 231 H675" class="serviceLink"/>
+  <text x="632" y="216" class="tiny">reference changed</text>
+  <path d="M950 231 H995" class="serviceLink"/>
+  <text x="954" y="216" class="tiny">2 CSV events</text>
+  <path d="M1270 231 H1315" class="serviceLink"/>
+  <text x="1273" y="216" class="tiny">changes only</text>
+
+  <!-- Kafka event bus -->
+  <rect x="65" y="360" width="1525" height="166" rx="22" fill="url(#bus)" stroke="#54a6b8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="98" y="401" fill="#f3fbff" font-size="25" font-weight="760">KAFKA · event bus</text>
+  <text x="99" y="428" fill="#c0e1eb" font-size="15">Separate events · compressed payloads · correlation_id ties each run together</text>
+  <g>
+    <rect x="98" y="454" width="255" height="42" rx="12" class="topic"/>
+    <text x="116" y="481" class="topicText">reference.sync.requests</text>
+    <rect x="370" y="454" width="278" height="42" rx="12" class="topic"/>
+    <text x="388" y="481" class="topicText">downloader.reference.completed</text>
+    <rect x="665" y="454" width="270" height="42" rx="12" class="topic"/>
+    <text x="683" y="481" class="topicText">downloader.current.completed</text>
+    <rect x="952" y="454" width="220" height="42" rx="12" class="topic"/>
+    <text x="970" y="481" class="topicText">core.process.results</text>
+    <rect x="1189" y="454" width="190" height="42" rx="12" class="topic"/>
+    <text x="1207" y="481" class="topicText">notifications</text>
+    <text x="1401" y="480" fill="#c0e1eb" font-size="14">+ auth / permits</text>
+  </g>
+  <path d="M187 308 V350" class="serviceLink"/>
+  <path d="M497 308 V350" class="serviceLink"/>
+  <path d="M820 308 V350" class="serviceLink"/>
+  <path d="M1140 308 V350" class="serviceLink"/>
+  <path d="M1460 308 V350" class="serviceLink"/>
+
+  <!-- Auth, notification and operational services -->
+  <g filter="url(#shadow)">
+    <rect x="65" y="590" width="300" height="145" rx="18" class="card"/>
+    <rect x="84" y="609" width="105" height="24" rx="12" class="tag"/>
+    <text x="98" y="626" class="tagText">CREDENTIALS</text>
+    <text x="84" y="667" class="cardTitle">Admin auth</text>
+    <text x="84" y="694" class="cardText">Caches the CMS session for 4 hours</text>
+    <text x="84" y="716" class="cardText">Returns session snapshots over RPC</text>
+
+    <rect x="405" y="590" width="300" height="145" rx="18" class="card"/>
+    <rect x="424" y="609" width="97" height="24" rx="12" fill="#eee8fb"/>
+    <text x="438" y="626" fill="#684ba5" class="tagText">OPERATION</text>
+    <text x="424" y="667" class="cardTitle">Health monitor</text>
+    <text x="424" y="694" class="cardText">Monitors Kafka and worker heartbeats</text>
+    <text x="424" y="716" class="cardText">Sends alerts to Telegram</text>
+
+    <rect x="745" y="590" width="300" height="145" rx="18" class="card"/>
+    <rect x="764" y="609" width="100" height="24" rx="12" fill="#eee8fb"/>
+    <text x="778" y="626" fill="#684ba5" class="tagText">MESSAGING</text>
+    <text x="764" y="667" class="cardTitle">Notifications</text>
+    <text x="764" y="694" class="cardText">Failures and non-empty core reports</text>
+    <text x="764" y="716" class="cardText">Sends messages to the admin chat</text>
+
+    <rect x="1085" y="590" width="300" height="145" rx="18" class="card"/>
+    <rect x="1104" y="609" width="96" height="24" rx="12" fill="#fff1d9"/>
+    <text x="1118" y="626" fill="#9b6412" class="tagText">GATEKEEPER</text>
+    <text x="1104" y="667" class="cardTitle">Rate limiter</text>
+    <text x="1104" y="694" class="cardText">Grants a permit before each HTTP call</text>
+    <text x="1104" y="716" class="cardText">CMS · Sheets · Telegram</text>
+
+    <rect x="1425" y="590" width="165" height="145" rx="18" class="card"/>
+    <rect x="1444" y="609" width="70" height="24" rx="12" fill="#e8eef7"/>
+    <text x="1458" y="626" fill="#4d6381" class="tagText">STATE</text>
+    <text x="1444" y="667" class="cardTitle">Redis</text>
+    <text x="1444" y="694" class="cardText">Shared quota</text>
+    <text x="1444" y="716" class="cardText">+ core pair buffer</text>
+  </g>
+
+  <!-- Provider APIs -->
+  <g>
+    <rect x="65" y="850" width="390" height="150" rx="20" fill="#203d58" stroke="#4d8198" stroke-width="1.5"/>
+    <circle cx="105" cy="892" r="16" fill="#62d8b2"/>
+    <path d="M98 892h14M105 885v14" stroke="#143d42" stroke-width="3" stroke-linecap="round"/>
+    <text x="135" y="898" class="apiTitle">Google Sheets API</text>
+    <text x="95" y="937" class="apiText">Reference CSV · service account / OAuth</text>
+    <text x="95" y="969" fill="#8ce4c4" font-size="14" font-weight="650">Quota: at least 1.112 s between requests</text>
+
+    <rect x="500" y="850" width="390" height="150" rx="20" fill="#203d58" stroke="#4d8198" stroke-width="1.5"/>
+    <circle cx="540" cy="892" r="16" fill="#62d8b2"/>
+    <path d="M533 892h14M540 885v14" stroke="#143d42" stroke-width="3" stroke-linecap="round"/>
+    <text x="570" y="898" class="apiTitle">CMS admin API</text>
+    <text x="530" y="937" class="apiText">Login · export · file manager · import</text>
+    <text x="530" y="969" fill="#8ce4c4" font-size="14" font-weight="650">At least 5.5 s between account requests</text>
+
+    <rect x="935" y="850" width="390" height="150" rx="20" fill="#203d58" stroke="#4d8198" stroke-width="1.5"/>
+    <circle cx="975" cy="892" r="16" fill="#62d8b2"/>
+    <path d="M968 892h14M975 885v14" stroke="#143d42" stroke-width="3" stroke-linecap="round"/>
+    <text x="1005" y="898" class="apiTitle">Telegram Bot API</text>
+    <text x="965" y="937" class="apiText">Detailed changes · service alerts</text>
+    <text x="965" y="969" fill="#8ce4c4" font-size="14" font-weight="650">Admin chat: at least 3.334 s between messages</text>
+
+    <rect x="1370" y="850" width="220" height="150" rx="20" fill="#203d58" stroke="#4d8198" stroke-width="1.5"/>
+    <text x="1400" y="898" class="apiTitle">Redis state</text>
+    <text x="1400" y="937" class="apiText">Permit TTLs</text>
+    <text x="1400" y="961" class="apiText">Core input pairs</text>
+  </g>
+
+  <!-- Permit request/reply and external HTTP paths -->
+  <path d="M497 308 V545 H1235 V580" class="permitLink"/>
+  <path d="M820 308 V555 H1265 V580" class="permitLink"/>
+  <path d="M1460 308 V545 H1320 V580" class="permitLink"/>
+  <path d="M215 735 V770 H1080 V700 H1085" class="permitLink"/>
+  <path d="M555 735 V785 H1070 V715 H1085" class="permitLink"/>
+  <path d="M895 735 V775 H1085" class="permitLink"/>
+  <path d="M1385 662 H1410" class="permitLink"/>
+  <path d="M1425 690 H1385" class="permitLink"/>
+  <text x="1392" y="760" class="tiny">atomic SET NX + TTL</text>
+  <path d="M497 308 V330 H35 V825 H260 V837" class="httpLink"/>
+  <path d="M820 308 V330 H1625 V812 H695 V837" class="httpLink"/>
+  <path d="M215 735 V785 H695 V837" class="httpLink"/>
+  <path d="M1460 308 V340 H1680 V800 H695 V837" class="httpLink"/>
+  <path d="M895 735 V810 H1160 V837" class="httpLink"/>
+  <path d="M555 735 V820 H1130 V837" class="httpLink"/>
+  <text x="714" y="803" class="tiny">Permitted outbound HTTP requests</text>
+
+  <!-- Health events and event-driven notifications -->
+  <path d="M555 590 V548 H820 V526" class="heartLink"/>
+  <path d="M895 590 V548" class="heartLink"/>
+  <path d="M1240 590 V548 H1140 V526" class="heartLink"/>
+  <path d="M1140 526 V550 H895 V580" class="serviceLink"/>
+  <text x="913" y="570" class="tiny">failures + detailed_changes</text>
+  <path d="M705 662 H730" class="serviceLink"/>
+  <text x="700" y="647" class="tiny">Telegram</text>
+
+  <!-- Legend and operating guarantees -->
+  <line x1="70" y1="1048" x2="125" y2="1048" stroke="#86a6c6" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="140" y="1053" class="tiny">Kafka event / RPC</text>
+  <line x1="340" y1="1048" x2="395" y2="1048" stroke="#62d8b2" stroke-width="3" marker-end="url(#arrowGreen)"/>
+  <text x="410" y="1053" class="tiny">Outbound HTTP request</text>
+  <line x1="645" y1="1048" x2="700" y2="1048" stroke="#f0bf69" stroke-width="2.5" stroke-dasharray="8 7" marker-end="url(#arrowAmber)"/>
+  <text x="715" y="1053" class="tiny">Permit request/reply via rate limiter</text>
+  <line x1="1030" y1="1048" x2="1085" y2="1048" stroke="#ae9bea" stroke-width="2.5" stroke-dasharray="4 7" marker-end="url(#arrow)"/>
+  <text x="1100" y="1053" class="tiny">Heartbeat / health</text>
+  <text x="1390" y="1053" fill="#a8bbd2" font-size="13">Kafka/Redis unavailable → HTTP waits</text>
+</svg>

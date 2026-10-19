@@ -21,6 +21,7 @@ def post(monkeypatch):
     response.json.return_value = {"ok": True}
     mock_post = Mock(return_value=response)
     monkeypatch.setattr(telegram.requests, "post", mock_post)
+    monkeypatch.setattr(telegram, "acquire_rate_limit", Mock())
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
     mock_post.response = response

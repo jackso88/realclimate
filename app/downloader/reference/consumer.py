@@ -25,6 +25,7 @@ from app.downloader.reference.utils import serialize_data_to_csv
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.retry import is_retryable_transport_error
+from app.messaging.rate_limit import rate_limit_google_client
 from app.messaging.topics import (
     REFERENCE_PIPELINE_COMPLETED,
     REFERENCE_SYNC_REQUESTS,
@@ -62,6 +63,10 @@ def handle_request(message, bus, settings: Settings | None = None) -> None:
                 SCOPES,
             )
             client = gspread.authorize(credentials)
+            rate_limit_google_client(
+                client,
+                getattr(settings, "bootstrap_servers", "localhost:9092"),
+            )
             try:
                 spreadsheet = client.open_by_key(spreadsheet_id)
             except PermissionError as service_account_error:
@@ -87,16 +92,24 @@ def handle_request(message, bus, settings: Settings | None = None) -> None:
                     user_token_file,
                     SCOPES,
                 )
-                spreadsheet = gspread.authorize(user_credentials).open_by_key(
-                    spreadsheet_id
+                client = gspread.authorize(user_credentials)
+                rate_limit_google_client(
+                    client,
+                    getattr(settings, "bootstrap_servers", "localhost:9092"),
                 )
+                spreadsheet = client.open_by_key(spreadsheet_id)
         else:
             credentials = get_credentials(
                 settings.credentials_file,
                 settings.token_file,
                 SCOPES,
             )
-            spreadsheet = gspread.authorize(credentials).open_by_key(spreadsheet_id)
+            client = gspread.authorize(credentials)
+            rate_limit_google_client(
+                client,
+                getattr(settings, "bootstrap_servers", "localhost:9092"),
+            )
+            spreadsheet = client.open_by_key(spreadsheet_id)
         worksheet = spreadsheet.worksheet(settings.sheet_name)
         content = serialize_data_to_csv(worksheet.get_all_values())
         changed = publish_reference_if_changed(bus, message, content)

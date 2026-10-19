@@ -9,6 +9,7 @@ from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.payloads import decode_bytes
 from app.messaging.retry import is_retryable_transport_error
+from app.messaging.rate_limit import rate_limit_session
 from app.messaging.topics import (
     ADMIN_AUTH_UPLOADER_RESPONSES,
     CORE_PROCESS_RESULTS,
@@ -57,6 +58,12 @@ def handle_processed_catalogue(
             bus,
             ADMIN_AUTH_UPLOADER_RESPONSES,
             "uploader-auth-rpc",
+        )
+        rate_limit_session(
+            session,
+            getattr(settings, "bootstrap_servers", "localhost:9092"),
+            "uploader",
+            "cms:account",
         )
         uploaded_file = upload_processed_content(
             session, settings, content, "processed.csv"
