@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.downloader.reference.config import extract_spreadsheet_id, load_settings
-from app.downloader.reference.models import ReferenceDownloaderEnvironment, Settings
+from app.downloader.reference.models import Settings
 
 
 class TestExtractSpreadsheetId:

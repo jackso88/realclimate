@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Merge the cleaned catalogue into the current CMS export in memory.
 
 Column mapping (see docstrings below for the exact rules):
