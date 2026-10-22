@@ -6,9 +6,9 @@ from functools import partial
 from app.messaging.kafka import run_consumer
 from app.contracts.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
-from app.notifications.config import configure_logging, load_settings
-from app.notifications.models import NotificationSettings
-from app.notifications.telegram import send_telegram_message
+from app.notifications.bot.config import configure_logging, load_settings
+from app.notifications.bot.models import NotificationSettings
+from app.notifications.bot.telegram import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def main() -> None:
         CORE_NOTIFICATIONS,
         "telegram-notifications",
         partial(handle_notification, settings=settings),
-        service_name="notifications",
+        service_name="notifications_bot",
     )
 
 

@@ -91,7 +91,7 @@ services:
         create_topic --topic admin-auth.requests
         create_topic --topic admin-auth.current.responses
         create_topic --topic admin-auth.uploader.responses
-        create_topic --topic notifications
+        create_topic --topic notifications_bot
         create_topic --topic health.heartbeats
         create_topic --topic rate.limit.requests --config retention.ms=3600000
         create_topic --topic rate.limit.responses --config retention.ms=3600000
@@ -277,9 +277,9 @@ services:
       rate_limiter: {condition: service_started}
     restart: unless-stopped
 
-  notifications:
+  notifications_bot:
     build: *app_build
-    command: ["python", "-m", "app.notifications.consumer"]
+    command: ["python", "-m", "app.notifications.bot.consumer"]
     environment:
       <<: *common_env
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}

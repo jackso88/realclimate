@@ -38,7 +38,7 @@ testpaths = ["app"]
 python_files = ["test_*.py"]
 addopts = [
     "-ra",
-    "-p", "app.notifications.tests.fixtures",
+    "-p", "app.notifications.bot.tests.fixtures",
     "-p", "app.contracts.tests.fixtures",
     "-p", "app.core.tests.fixtures",
 ]

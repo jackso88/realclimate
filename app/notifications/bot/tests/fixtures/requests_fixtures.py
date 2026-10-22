@@ -1,5 +1,5 @@
 import pytest
-from app.notifications import telegram
+from app.notifications.bot import telegram
 from types import SimpleNamespace
 from unittest.mock import Mock
 from urllib3.connectionpool import HTTPConnectionPool
