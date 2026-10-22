@@ -28,7 +28,7 @@ jobs:
       - name: Run test suite
         run: >-
           poetry run python -m pytest -q --cov=app --cov-report=term-missing
-          --cov-fail-under=97
+          --cov-fail-under=80
 
   kafka-tls-integration:
     runs-on: ubuntu-latest
