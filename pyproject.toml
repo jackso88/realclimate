@@ -15,6 +15,7 @@ dependencies = [
     "python-dotenv>=1.2.3,<2.0.0",
     "pydantic>=2.12.0,<3.0.0",
     "requests>=2.34.2,<3.0.0",
+    "urllib3 (>=2.8.0,<3.0.0)",
 ]
 
 [tool.poetry]
@@ -35,7 +36,12 @@ extend-exclude = '''
 [tool.pytest.ini_options]
 testpaths = ["app"]
 python_files = ["test_*.py"]
-addopts = "-ra"
+addopts = [
+    "-ra",
+    "-p", "app.notifications.tests.fixtures",
+    "-p", "app.contracts.tests.fixtures",
+    "-p", "app.core.tests.fixtures",
+]
 
 [tool.coverage.run]
 source = ["app"]

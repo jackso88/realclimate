@@ -1,53 +1,43 @@
 """Tests for the Telegram Bot API client."""
 
 import traceback
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 import requests
-
+import json
+import urllib3
+import io
 from app.notifications import telegram
 from app.notifications.exceptions import TelegramDeliveryError
-
-TOKEN = "123456789:AAFakeTokenValue"
-TOKEN_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
-
-@pytest.fixture
-def post(monkeypatch):
-    """Replace requests.post with a mock that returns an accepted response."""
-    response = Mock()
-    response.json.return_value = {"ok": True}
-    mock_post = Mock(return_value=response)
-    monkeypatch.setattr(telegram.requests, "post", mock_post)
-    monkeypatch.setattr(telegram, "acquire_rate_limit", Mock())
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
-    mock_post.response = response
-    return mock_post
+from urllib3.exceptions import ProtocolError
+from app.notifications.telegram import _send_part
 
 
-@pytest.fixture
-def pauses(monkeypatch):
-    """Record the pauses between message parts instead of sleeping."""
-    delays = []
-    monkeypatch.setattr(telegram, "time", SimpleNamespace(sleep=delays.append))
-    return delays
+def send(token):
+    _send_part(token, "42", "hello", 5.0, "kafka:9092")
+
+
+def make_response(status=200, body=None, headers=None):
+    payload = json.dumps(body if body is not None else {"ok": True}).encode()
+    return urllib3.HTTPResponse(
+        body=io.BytesIO(payload),
+        status=status,
+        headers={"Content-Type": "application/json", **(headers or {})},
+        preload_content=False,
+        request_method="POST",
+    )
 
 
 def sent_texts(post):
     return [call.kwargs["json"]["text"] for call in post.call_args_list]
 
 
-# ----------------------------------------------------------------- sending
-
-
-def test_message_is_posted_to_the_bot_endpoint(post):
+def test_message_is_posted_to_the_bot_endpoint(post, token_url):
     telegram.send_telegram_message("hello")
 
     post.assert_called_once_with(
-        TOKEN_URL,
+        token_url,
         json={"chat_id": "42", "text": "hello"},
         timeout=15,
     )
@@ -94,51 +84,51 @@ def test_delivery_errors_are_still_runtime_errors(post):
 # ------------------------------------------------- errors never expose the token
 
 
-def test_http_errors_become_delivery_errors_without_the_token(post):
+def test_http_errors_become_delivery_errors_without_the_token(post, token_url, token):
     post.response.raise_for_status.side_effect = requests.HTTPError(
-        f"400 Client Error: Bad Request for url: {TOKEN_URL}"
+        f"400 Client Error: Bad Request for url: {token_url}"
     )
 
     with pytest.raises(TelegramDeliveryError) as error:
         telegram.send_telegram_message("hello")
 
     assert "400 Client Error" in str(error.value)
-    assert TOKEN not in str(error.value)
+    assert token not in str(error.value)
     assert "bot<redacted>" in str(error.value)
 
 
-def test_network_errors_become_delivery_errors_without_the_token(post):
+def test_network_errors_become_delivery_errors_without_the_token(post, token):
     post.side_effect = requests.ConnectionError(
         "HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries "
-        f"exceeded with url: /bot{TOKEN}/sendMessage (Caused by timeout)"
+        f"exceeded with url: /bot{token}/sendMessage (Caused by timeout)"
     )
 
     with pytest.raises(TelegramDeliveryError) as error:
         telegram.send_telegram_message("hello")
 
-    assert TOKEN not in str(error.value)
+    assert token not in str(error.value)
     assert "Max retries exceeded" in str(error.value)
 
 
-def test_a_bare_token_without_the_bot_prefix_is_redacted_too(post):
-    post.side_effect = requests.ConnectionError(f"proxy rejected {TOKEN}")
+def test_a_bare_token_without_the_bot_prefix_is_redacted_too(post, token):
+    post.side_effect = requests.ConnectionError(f"proxy rejected {token}")
 
     with pytest.raises(TelegramDeliveryError) as error:
         telegram.send_telegram_message("hello")
 
-    assert TOKEN not in str(error.value)
+    assert token not in str(error.value)
 
 
-def test_the_token_does_not_reach_the_logged_traceback(post):
+def test_the_token_does_not_reach_the_logged_traceback(post, token_url, token):
     post.response.raise_for_status.side_effect = requests.HTTPError(
-        f"400 Client Error: Bad Request for url: {TOKEN_URL}"
+        f"400 Client Error: Bad Request for url: {token_url}"
     )
 
     with pytest.raises(TelegramDeliveryError) as error:
         telegram.send_telegram_message("hello")
 
     logged = "".join(traceback.format_exception(error.value))
-    assert TOKEN not in logged
+    assert token not in logged
     assert error.value.__cause__ is None
     assert error.value.__suppress_context__ is True
 
@@ -214,17 +204,19 @@ def test_a_pause_separates_consecutive_parts(post, pauses):
     assert set(pauses) == {telegram.load_settings().pause_between_parts_seconds}
 
 
-def test_a_failure_in_a_later_part_raises_after_earlier_parts_were_sent(post, pauses):
+def test_a_failure_in_a_later_part_raises_after_earlier_parts_were_sent(
+    post, pauses, token_url, token
+):
     post.response.raise_for_status.side_effect = [
         None,
-        requests.HTTPError(f"500 Server Error for url: {TOKEN_URL}"),
+        requests.HTTPError(f"500 Server Error for url: {token_url}"),
     ]
 
     with pytest.raises(TelegramDeliveryError) as error:
         telegram.send_telegram_message("x" * 9000)
 
     assert post.call_count == 2
-    assert TOKEN not in str(error.value)
+    assert token not in str(error.value)
 
 
 # ------------------------------------------------------------- split_message
@@ -278,3 +270,101 @@ def test_no_content_is_lost_or_duplicated(limit):
 
     assert all(len(part) <= limit for part in parts)
     assert "".join("".join(parts).split()) == "".join(text.split())
+
+
+# ------------------------------------------------------------- Retrying post requests
+
+
+def test_success_first_try_no_retries(net, token):
+    net.queue = [make_response(200)]
+    send(token)
+    assert net.requests == 1
+    assert net.sleeps == []
+
+
+def test_retries_503_then_succeeds(net, token):
+    net.queue = [make_response(503), make_response(503), make_response(200)]
+    send(token)
+    assert net.requests == 3
+
+
+def test_gives_up_after_total_retries(net, token):
+    net.queue = [make_response(503) for _ in range(10)]
+    with pytest.raises(TelegramDeliveryError) as exc:
+        send(token)
+    assert net.requests == 4
+    assert token not in str(exc.value)
+    assert exc.value.__cause__ is None
+
+
+def test_exhausted_retries_keep_telegram_description(net, token):
+    body = {"ok": False, "description": "Too Many Requests: retry later"}
+    net.queue = [make_response(503, body) for _ in range(10)]
+    with pytest.raises(
+        TelegramDeliveryError, match="Too Many Requests: retry later"
+    ) as exc:
+        send(token)
+    assert net.requests == 4
+    assert token not in str(exc.value)
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_statuses_from_forcelist_are_retried(net, status, token):
+    net.queue = [make_response(status), make_response(200)]
+    send(token)
+    assert net.requests == 2
+
+
+def test_400_is_not_retried(net, token):
+    net.queue = [make_response(400, {"ok": False, "description": "Bad Request"})]
+    with pytest.raises(TelegramDeliveryError, match="Bad Request"):
+        send(token)
+    assert net.requests == 1
+
+
+@pytest.mark.parametrize(
+    "status,description",
+    [
+        (401, "Unauthorized"),
+        (404, "Not Found"),
+    ],
+)
+def test_auth_and_not_found_are_not_retried(net, status, description, token):
+    net.queue = [make_response(status, {"ok": False, "description": description})]
+    with pytest.raises(TelegramDeliveryError, match=description) as exc:
+        send(token)
+    assert net.requests == 1
+    assert net.sleeps == []
+    assert token not in str(exc.value)
+
+
+def test_ok_false_with_200_is_not_retried(net, token):
+    net.queue = [make_response(200, {"ok": False})]
+    with pytest.raises(TelegramDeliveryError, match="rejected"):
+        send(token)
+    assert net.requests == 1
+
+
+def test_connection_error_is_retried(net, token):
+    net.queue = [ProtocolError("connection aborted"), make_response(200)]
+    send(token)
+    assert net.requests == 2
+
+
+def test_backoff_sleeps_between_retries(net, token):
+    net.queue = [make_response(503), make_response(503), make_response(200)]
+    send(token)
+    assert len(net.sleeps) >= 1  # пауза есть только между повторами
+
+
+def test_retry_after_header_is_respected(net, token):
+    net.queue = [make_response(503, headers={"Retry-After": "7"}), make_response(200)]
+    send(token)
+    assert 7.0 in net.sleeps
+
+
+def test_rate_limit_acquired_once_despite_retries(net, token):
+    net.queue = [make_response(503), make_response(503), make_response(200)]
+    send(token)
+    assert net.requests == 3
+    assert net.rate_calls == [("kafka:9092", "notifications", "telegram:admin_chat")]

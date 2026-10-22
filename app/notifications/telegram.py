@@ -4,6 +4,9 @@ import time
 
 import requests
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from app.messaging.kafka import sanitize_error
 from app.notifications.config import load_settings
 from app.notifications.models import NotificationSettings
@@ -98,28 +101,42 @@ def _send_part(
         chat_id: Destination chat identifier.
         text: Message text, at most the configured Telegram character limit.
         timeout: Maximum time to wait for the Telegram API, in seconds.
+        bootstrap_servers: Kafka bootstrap servers used by the rate limiter.
 
     Raises:
         TelegramDeliveryError: If the request fails or Telegram rejects it.
     """
-    try:
-        acquire_rate_limit(bootstrap_servers, "notifications", "telegram:admin_chat")
-        response = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        accepted = bool(response.json().get("ok"))
-    except (requests.RequestException, ValueError) as error:
-        reason = sanitize_error(str(error)).replace(token, "<redacted>")
-        description = _telegram_description(getattr(error, "response", None))
-        if description:
-            reason = f"{reason} ({description})"
-        # "from None" drops the original exception, whose text holds the token.
-        raise TelegramDeliveryError(f"Telegram request failed: {reason}") from None
-    if not accepted:
-        raise TelegramDeliveryError("Telegram rejected the notification")
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        raise_on_status=False,
+        allowed_methods=["POST"],
+        status_forcelist=[500, 502, 503, 504],
+    )
+
+    with requests.Session() as session:
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        try:
+            acquire_rate_limit(
+                bootstrap_servers, "notifications", "telegram:admin_chat"
+            )
+            response = session.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text},
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            accepted = bool(response.json().get("ok"))
+        except (requests.RequestException, ValueError) as error:
+            reason = sanitize_error(str(error)).replace(token, "<redacted>")
+            description = _telegram_description(getattr(error, "response", None))
+            if description:
+                reason = f"{reason} ({description})"
+            # "from None" drops the original exception, whose text holds the token.
+            raise TelegramDeliveryError(f"Telegram request failed: {reason}") from None
+        if not accepted:
+            raise TelegramDeliveryError("Telegram rejected the notification")
 
 
 def send_telegram_message(

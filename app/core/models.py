@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Validated models shared across the cleaning and merging pipeline."""
 
 from __future__ import annotations
@@ -6,14 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
-
-# Type of the persistent duplicate-code mapping. The key uniquely (and
-# stably) identifies one physical duplicate row:
-#   (original_нс-код, model, occurrence_of_this_code_model_pair)
-# "occurrence" starts at 1 and disambiguates the rare case where the
-# same code AND the same model repeat verbatim (e.g. identical
-# consumables listed twice).
 from pydantic import (
     BaseModel,
     ConfigDict,

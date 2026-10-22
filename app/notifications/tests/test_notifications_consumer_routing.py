@@ -1,12 +1,11 @@
 """Tests for how notification envelopes are turned into Telegram text."""
 
 import logging
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app.contracts.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
-from app.notifications import consumer, telegram
+from app.notifications import consumer
 from app.notifications.consumer import handle_notification
 
 
@@ -98,21 +97,12 @@ def test_main_runs_the_notification_worker(monkeypatch):
 
 
 def test_a_first_run_report_listing_hundreds_of_articles_is_delivered_in_full(
-    monkeypatch,
+    post,
 ):
     # Regression: the whole report used to be one message, far over Telegram's
     # 4096-character limit, so it was rejected and the notification was lost.
     codes = [f"НС-{1_000_000 + number}" for number in range(525)]
     report = "Были добавлены новые артикулы: " + ", ".join(codes)
-    response = Mock()
-    response.json.return_value = {"ok": True}
-    post = Mock(return_value=response)
-    monkeypatch.setattr(telegram.requests, "post", post)
-    monkeypatch.setattr(telegram, "acquire_rate_limit", lambda *_: None)
-    monkeypatch.setattr(telegram, "time", SimpleNamespace(sleep=lambda seconds: None))
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
-
     message = Envelope.create("detailed_changes", {"changes": [report]})
 
     handle_notification(message, None)
