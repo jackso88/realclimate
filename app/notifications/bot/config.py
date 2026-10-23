@@ -2,7 +2,7 @@
 
 import logging
 import os
-from app.notifications.models import NotificationSettings
+from app.notifications.bot.models import NotificationSettings
 
 
 def load_settings() -> NotificationSettings:

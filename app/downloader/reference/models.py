@@ -1,16 +1,9 @@
 """Data transfer objects for the Google Sheets downloader."""
 
-from pathlib import Path
-from typing import Literal
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    PositiveInt,
     field_validator,
     model_validator,
 )

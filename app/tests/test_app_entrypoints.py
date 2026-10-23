@@ -49,10 +49,10 @@ CONSUMER_ENTRYPOINTS = [
     ),
     ("app.uploader.consumer", CORE_PROCESS_RESULTS, "uploader-service", "uploader"),
     (
-        "app.notifications.consumer",
+        "app.notifications.bot.consumer",
         CORE_NOTIFICATIONS,
         "telegram-notifications",
-        "notifications",
+        "notifications_bot",
     ),
 ]
 
@@ -84,7 +84,7 @@ def test_consumer_entrypoints_listen_to_their_own_topic(
         "app.downloader.current.config",
         "app.downloader.reference.config",
         "app.uploader.config",
-        "app.notifications.config",
+        "app.notifications.bot.config",
     ):
         monkeypatch.setattr(f"{config_module}.load_settings", lambda: settings)
 

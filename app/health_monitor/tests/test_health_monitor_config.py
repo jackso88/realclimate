@@ -33,13 +33,13 @@ def test_load_settings_reads_services_and_timing(monkeypatch):
     monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "broker:9093")
     monkeypatch.setenv(
         "HEALTH_MONITORED_SERVICES",
-        "core, uploader, notifications, downloader_current, downloader_reference",
+        "core, uploader, notifications_bot, downloader_current, downloader_reference",
     )
     monkeypatch.setenv("HEALTH_HEARTBEAT_TIMEOUT_SECONDS", "45")
     monkeypatch.setenv("HEALTH_STARTUP_GRACE_SECONDS", "90")
     monkeypatch.setenv("HEALTH_CHECK_INTERVAL_SECONDS", "5")
     monkeypatch.setenv("HEALTH_MAX_BUSY_SECONDS", "7200")
-    monkeypatch.setenv("HEALTH_MAX_BUSY_OVERRIDES", "core=600, notifications=120")
+    monkeypatch.setenv("HEALTH_MAX_BUSY_OVERRIDES", "core=600, notifications_bot=120")
 
     settings = load_settings()
 
@@ -47,7 +47,7 @@ def test_load_settings_reads_services_and_timing(monkeypatch):
     assert settings.monitored_services == (
         "core",
         "uploader",
-        "notifications",
+        "notifications_bot",
         "downloader_current",
         "downloader_reference",
     )
@@ -55,7 +55,7 @@ def test_load_settings_reads_services_and_timing(monkeypatch):
     assert settings.startup_grace_seconds == 90
     assert settings.check_interval_seconds == 5
     assert settings.max_busy_seconds == 7200
-    assert settings.busy_limit_overrides == {"core": 600, "notifications": 120}
+    assert settings.busy_limit_overrides == {"core": 600, "notifications_bot": 120}
 
 
 @pytest.mark.parametrize("value", ["0", "-3", "invalid"])

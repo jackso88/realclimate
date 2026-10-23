@@ -2,9 +2,6 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
-
-
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -14,6 +11,9 @@ from pydantic import (
     model_validator,
 )
 from typing import ClassVar
+
+AVAILABILITY = "availability"
+STUCK = "stuck"
 
 
 class HealthMonitorSettings(BaseModel):
@@ -36,17 +36,13 @@ class HealthMonitorSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    bootstrap_servers: str = Field(min_length=1)
+    busy_limit_overrides: dict[str, PositiveInt] = Field(default_factory=dict)
     monitored_services: tuple[str, ...] = Field(min_length=1)
     heartbeat_timeout_seconds: int = Field(default=120, gt=0)
     startup_grace_seconds: int = Field(default=180, gt=0)
     check_interval_seconds: int = Field(default=10, gt=0)
     max_busy_seconds: int = Field(default=5400, gt=0)
-    busy_limit_overrides: dict[str, PositiveInt] = Field(default_factory=dict)
-
-
-AVAILABILITY = "availability"
-STUCK = "stuck"
+    bootstrap_servers: str = Field(min_length=1)
 
 
 class ServiceTransition(BaseModel):
@@ -65,11 +61,11 @@ class ServiceTransition(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    service: str = Field(min_length=1)
-    available: bool
     kind: Literal["availability", "stuck"] = AVAILABILITY
     busy_seconds: float = Field(default=0.0, ge=0)
     limit_seconds: int = Field(default=0, ge=0)
+    service: str = Field(min_length=1)
+    available: bool
 
 
 class HealthMonitorEnvironment(BaseModel):
@@ -88,14 +84,15 @@ class HealthMonitorEnvironment(BaseModel):
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
     DEFAULT_MONITORED_SERVICES: ClassVar[tuple[str, ...]] = (
-        "admin_auth",
-        "downloader_current",
-        "downloader_reference",
         "core",
         "uploader",
         "scheduler",
-        "notifications",
+        "admin_auth",
         "rate_limiter",
+        "notifications_bot",
+        "notifications_email",
+        "downloader_current",
+        "downloader_reference",
     )
 
     bootstrap_servers: str = Field(

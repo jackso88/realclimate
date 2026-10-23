@@ -277,9 +277,9 @@ services:
       rate_limiter: {condition: service_started}
     restart: unless-stopped
 
-  notifications:
+  notifications_bot:
     build: *app_build
-    command: ["python", "-m", "app.notifications.consumer"]
+    command: ["python", "-m", "app.notifications.bot.consumer"]
     environment:
       <<: *common_env
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
@@ -287,6 +287,25 @@ services:
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       rate_limiter: {condition: service_started}
+    restart: unless-stopped
+    volumes:
+      - *kafka_ca_volume
+
+  notifications_email:
+    build: *app_build
+    command: ["python", "-m", "app.notifications.email.consumer"]
+    environment:
+      <<: *common_env
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:?Set EMAIL_SMTP_HOST in .env}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+      EMAIL_SMTP_SECURITY: ${EMAIL_SMTP_SECURITY:-starttls}
+      EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
+      EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+      EMAIL_SMTP_TIMEOUT_SECONDS: ${EMAIL_SMTP_TIMEOUT_SECONDS:-15}
+      EMAIL_SENDER: ${EMAIL_SENDER:?Set EMAIL_SENDER in .env}
+      EMAIL_RECIPIENTS: ${EMAIL_RECIPIENTS:?Set EMAIL_RECIPIENTS in .env}
+    depends_on:
+      kafka_init: {condition: service_completed_successfully}
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Free-standing helper functions used by the cleaning / merging pipeline.
 
 Grouped into three areas:

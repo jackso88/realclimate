@@ -12,7 +12,7 @@ CONFIG_MODULES = [
     "app.downloader.current.config",
     "app.downloader.reference.config",
     "app.health_monitor.config",
-    "app.notifications.config",
+    "app.notifications.bot.config",
     "app.scheduler.config",
     "app.uploader.config",
 ]

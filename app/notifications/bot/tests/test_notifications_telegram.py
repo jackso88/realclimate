@@ -8,10 +8,10 @@ import requests
 import json
 import urllib3
 import io
-from app.notifications import telegram
-from app.notifications.exceptions import TelegramDeliveryError
+from app.notifications.bot import telegram
+from app.notifications.bot.exceptions import TelegramDeliveryError
 from urllib3.exceptions import ProtocolError
-from app.notifications.telegram import _send_part
+from app.notifications.bot.telegram import _send_part
 
 
 def send(token):
@@ -367,4 +367,6 @@ def test_rate_limit_acquired_once_despite_retries(net, token):
     net.queue = [make_response(503), make_response(503), make_response(200)]
     send(token)
     assert net.requests == 3
-    assert net.rate_calls == [("kafka:9092", "notifications", "telegram:admin_chat")]
+    assert net.rate_calls == [
+        ("kafka:9092", "notifications_bot", "telegram:admin_chat")
+    ]

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 _CLAIM_PAIR_SCRIPT = """
 if redis.call('EXISTS', KEYS[3]) == 0
    and redis.call('HEXISTS', KEYS[1], 'reference_csv') == 1

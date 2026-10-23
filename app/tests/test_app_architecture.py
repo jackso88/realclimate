@@ -37,8 +37,8 @@ requires_compose = pytest.mark.skipif(
 #   * the health monitor alerts through Telegram without going via Kafka.
 ALLOWED_SERVICE_DEPENDENCIES = {
     ("downloader.current", "admin_auth"),
+    ("health_monitor", "notifications.bot"),
     ("uploader", "admin_auth"),
-    ("health_monitor", "notifications"),
 }
 
 
@@ -55,6 +55,8 @@ def service_of(module_name):
     parts = module_name.split(".")
     if len(parts) >= 3 and parts[1] == "downloader":
         return f"downloader.{parts[2]}"
+    elif len(parts) >= 3 and parts[1] == "notifications":
+        return f"notifications.{parts[2]}"
     return parts[1] if len(parts) > 1 else None
 
 
