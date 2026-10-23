@@ -159,7 +159,7 @@ otherwise print as part of the API URL.
 ### Email notifications
 
 The `notifications_email` service consumes the same Kafka topic as the Telegram
-service (`notifications_bot`), in its own consumer group (`email-notifications`), so both
+service (`notifications`), in its own consumer group (`email-notifications`), so both
 receive every message. It emails only non-empty `detailed_changes` reports to
 exactly two recipients in one message; failure reports and other commands are
 ignored. The Kafka `correlation_id` is kept in the `X-Correlation-ID` header,

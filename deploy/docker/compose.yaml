@@ -91,7 +91,7 @@ services:
         create_topic --topic admin-auth.requests
         create_topic --topic admin-auth.current.responses
         create_topic --topic admin-auth.uploader.responses
-        create_topic --topic notifications_bot
+        create_topic --topic notifications
         create_topic --topic health.heartbeats
         create_topic --topic rate.limit.requests --config retention.ms=3600000
         create_topic --topic rate.limit.responses --config retention.ms=3600000
