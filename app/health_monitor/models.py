@@ -90,6 +90,7 @@ class HealthMonitorEnvironment(BaseModel):
         "admin_auth",
         "rate_limiter",
         "notifications_bot",
+        "notifications_email",
         "downloader_current",
         "downloader_reference",
     )

@@ -48,6 +48,9 @@ jobs:
       GOOGLE_SHEET_NAME: ci-test
       TELEGRAM_BOT_TOKEN: 123456:ci-test
       TELEGRAM_CHAT_ID: "123456"
+      EMAIL_SMTP_HOST: smtp.example.invalid
+      EMAIL_SENDER: ci@example.invalid
+      EMAIL_RECIPIENTS: first@example.invalid,second@example.invalid
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
