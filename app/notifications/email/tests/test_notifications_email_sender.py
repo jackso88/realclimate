@@ -25,7 +25,7 @@ def notification(changes):
     return build_notification(changes, "corr-123")
 
 
-def test_notification_lists_every_change_and_the_correlation_id(changes):
+def test_notification_lists_every_change_without_the_correlation_id(changes):
     notification = build_notification(changes, "corr-123")
 
     assert notification.subject == "Catalogue changes detected: 2"
@@ -34,16 +34,15 @@ def test_notification_lists_every_change_and_the_correlation_id(changes):
         "Catalogue changes (2):",
         "",
         *changes,
-        "",
-        "Correlation ID: corr-123",
     ]
+    assert "corr-123" not in notification.body
 
 
-def test_notification_without_correlation_id_has_no_trace_line(changes):
+def test_notification_without_correlation_id_has_the_same_body(changes):
     notification = build_notification(changes)
 
     assert notification.correlation_id is None
-    assert "Correlation ID" not in notification.body
+    assert notification.body == build_notification(changes, "corr-123").body
 
 
 def test_message_is_addressed_to_both_recipients(notification, email_settings):

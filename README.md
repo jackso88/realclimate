@@ -162,8 +162,8 @@ The `notifications_email` service consumes the same Kafka topic as the Telegram
 service (`notifications`), in its own consumer group (`email-notifications`), so both
 receive every message. It emails only non-empty `detailed_changes` reports to
 exactly two recipients in one message; failure reports and other commands are
-ignored. The Kafka `correlation_id` is kept in the `X-Correlation-ID` header,
-at the end of the body, and in log lines.
+ignored. The Kafka `correlation_id` is kept in the `X-Correlation-ID` header and
+in log lines; it is not written into the email body.
 
 Configure it with `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_SECURITY`
 (`starttls`, `ssl`, or `none`), optional `EMAIL_SMTP_USERNAME` and

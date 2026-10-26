@@ -25,7 +25,7 @@ def test_detailed_changes_are_emailed_with_the_correlation_id(
     assert to_addrs == ["first@example.invalid", "second@example.invalid"]
     assert message[CORRELATION_HEADER] == "corr-123"
     body = message.get_content()
-    assert "Correlation ID: corr-123" in body
+    assert "corr-123" not in body
     assert all(change in body for change in changes)
 
 

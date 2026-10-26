@@ -26,15 +26,13 @@ def build_notification(
     Args:
         changes: Non-empty list of human-readable change descriptions; each
             entry is written on its own line, unchanged.
-        correlation_id: Optional pipeline ID. It is repeated at the end of the
-            body so it survives even when mail clients hide custom headers.
+        correlation_id: Optional pipeline ID. It is not written into the body;
+            it travels in the ``X-Correlation-ID`` header and in log lines.
 
     Returns:
         The notification ready to be sent.
     """
     lines = [f"Catalogue changes ({len(changes)}):", "", *changes]
-    if correlation_id:
-        lines.extend(["", f"Correlation ID: {correlation_id}"])
     return EmailNotification(
         subject=SUBJECT_TEMPLATE.format(count=len(changes)),
         body="\n".join(lines),
