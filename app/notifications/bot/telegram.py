@@ -8,9 +8,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from app.messaging.kafka import sanitize_error
-from app.notifications.config import load_settings
-from app.notifications.models import NotificationSettings
-from app.notifications.exceptions import TelegramDeliveryError
+from app.notifications.bot.config import load_settings
+from app.notifications.bot.models import NotificationSettings
+from app.notifications.bot.exceptions import TelegramDeliveryError
 from app.messaging.rate_limit import acquire_rate_limit
 
 
@@ -119,7 +119,7 @@ def _send_part(
         session.mount("https://", adapter)
         try:
             acquire_rate_limit(
-                bootstrap_servers, "notifications", "telegram:admin_chat"
+                bootstrap_servers, "notifications_bot", "telegram:admin_chat"
             )
             response = session.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",

@@ -28,6 +28,7 @@ x-auth-env: &auth_env
 services:
   kafka_certs:
     image: apache/kafka:3.9.1
+    container_name: kafka_certs
     user: "0:0"
     entrypoint: ["/bin/bash", "/opt/kafka/certs/generate-certs.sh"]
     environment:
@@ -40,6 +41,7 @@ services:
 
   kafka:
     image: apache/kafka:3.9.1
+    container_name: kafka
     hostname: kafka
     depends_on:
       kafka_certs: {condition: service_completed_successfully}
@@ -60,8 +62,32 @@ services:
       - kafka_client_certs:/run/secrets/kafka-client:ro
       - ./kafka/broker-entrypoint.sh:/opt/kafka/custom/broker-entrypoint.sh:ro
 
+  kafka_ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka_ui
+    ports:
+      - "8080:8080"
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: 'realclimate-cluster'
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka:9092'
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: 'SASL_SSL'
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM: 'SCRAM-SHA-512'
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_SASL_USERNAME}" password="${KAFKA_SASL_PASSWORD}";'
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_TYPE: 'PKCS12'
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_LOCATION: '/run/secrets/kafka/kafka.truststore.p12'
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_TRUSTSTORE_PASSWORD: '${KAFKA_TLS_STORE_PASSWORD}'
+    depends_on:
+      kafka_certs: { condition: service_completed_successfully }
+      kafka_init: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+    restart: unless-stopped
+    volumes:
+      - *kafka_ca_volume
+
   kafka_init:
     image: apache/kafka:3.9.1
+    container_name: kafka_init
     depends_on:
       kafka: {condition: service_healthy}
     environment:
@@ -108,6 +134,7 @@ services:
     restart: "no"
 
   kafka_tls_integration_test:
+    container_name: kafka_tls_integration_test
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.test
@@ -128,6 +155,7 @@ services:
     restart: "no"
 
   admin_auth:
+    container_name: admin_auth
     build: *app_build
     command: ["python", "-m", "app.admin_auth.consumer"]
     # Only the authentication service receives account credentials.
@@ -141,6 +169,7 @@ services:
     restart: unless-stopped
 
   downloader_current:
+    container_name: downloader_current
     build: *app_build
     command: ["python", "-m", "app.downloader.current.consumer"]
     environment:
@@ -157,6 +186,7 @@ services:
     restart: unless-stopped
 
   downloader_reference:
+    container_name: downloader_reference
     build: *app_build
     command: ["python", "-m", "app.downloader.reference.consumer"]
     environment:
@@ -176,6 +206,7 @@ services:
     restart: unless-stopped
 
   core:
+    container_name: core
     build: *app_build
     command: ["python", "-m", "app.core.consumer"]
     environment:
@@ -194,6 +225,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
+    container_name: redis
     command:
       - redis-server
       - --appendonly
@@ -215,6 +247,7 @@ services:
     restart: unless-stopped
 
   rate_limiter:
+    container_name: rate_limiter
     build: *app_build
     command: ["python", "-m", "app.rate_limiter.consumer"]
     environment:
@@ -231,6 +264,7 @@ services:
     restart: unless-stopped
 
   uploader:
+    container_name: uploader
     build: *app_build
     command: ["python", "-m", "app.uploader.consumer"]
     environment:
@@ -247,6 +281,7 @@ services:
     restart: unless-stopped
 
   scheduler:
+    container_name: scheduler
     build: *app_build
     command: ["python", "-m", "app.scheduler.main"]
     environment:
@@ -259,6 +294,7 @@ services:
       - *kafka_ca_volume
 
   health_monitor:
+    container_name: health_monitor
     build: *app_build
     command: ["python", "-m", "app.health_monitor.main"]
     environment:
@@ -277,9 +313,10 @@ services:
       rate_limiter: {condition: service_started}
     restart: unless-stopped
 
-  notifications:
+  notifications_bot:
+    container_name: notifications_bot
     build: *app_build
-    command: ["python", "-m", "app.notifications.consumer"]
+    command: ["python", "-m", "app.notifications.bot.consumer"]
     environment:
       <<: *common_env
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
@@ -287,6 +324,26 @@ services:
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       rate_limiter: {condition: service_started}
+    restart: unless-stopped
+    volumes:
+      - *kafka_ca_volume
+
+  notifications_email:
+    container_name: notifications_email
+    build: *app_build
+    command: ["python", "-m", "app.notifications.email.consumer"]
+    environment:
+      <<: *common_env
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:?Set EMAIL_SMTP_HOST in .env}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+      EMAIL_SMTP_SECURITY: ${EMAIL_SMTP_SECURITY:-starttls}
+      EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
+      EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
+      EMAIL_SMTP_TIMEOUT_SECONDS: ${EMAIL_SMTP_TIMEOUT_SECONDS:-15}
+      EMAIL_SENDER: ${EMAIL_SENDER:?Set EMAIL_SENDER in .env}
+      EMAIL_RECIPIENTS: ${EMAIL_RECIPIENTS:?Set EMAIL_RECIPIENTS in .env}
+    depends_on:
+      kafka_init: {condition: service_completed_successfully}
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume

@@ -126,7 +126,8 @@ state and is not needed for normal certificate rotation.
 ### Service health monitoring
 
 The `health_monitor` container watches Kafka heartbeats from `admin_auth`, both
-downloaders, `core`, `uploader`, `scheduler`, and `notifications`. Workers send a
+downloaders, `core`, `uploader`, `scheduler`, `notifications_bot`, and
+`notifications_email`. Workers send a
 heartbeat every 30 seconds. A service is reported unavailable after 120 seconds
 without a heartbeat; startup and Kafka reconnection have a 180-second grace
 period. These thresholds can be changed with `HEALTH_HEARTBEAT_TIMEOUT_SECONDS`,
@@ -154,6 +155,24 @@ Telegram rejects messages longer than 4096 characters, so a long change report
 messages labelled `[1/3]`, `[2/3]`, ... and split between lines or after
 commas. Delivery errors are logged without the bot token, which `requests` would
 otherwise print as part of the API URL.
+
+### Email notifications
+
+The `notifications_email` service consumes the same Kafka topic as the Telegram
+service (`notifications`), in its own consumer group (`email-notifications`), so both
+receive every message. It emails only non-empty `detailed_changes` reports to
+all configured recipients in one message; failure reports and other commands are
+ignored. The Kafka `correlation_id` is kept in the `X-Correlation-ID` header and
+in log lines; it is not written into the email body.
+
+Configure it with `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_SECURITY`
+(`starttls`, `ssl`, or `none`), optional `EMAIL_SMTP_USERNAME` and
+`EMAIL_SMTP_PASSWORD` (set both or neither), `EMAIL_SMTP_TIMEOUT_SECONDS`,
+`EMAIL_SENDER`, and `EMAIL_RECIPIENTS` (one or more distinct comma-separated
+addresses). Temporary SMTP failures (network errors, 4xx answers, rejected
+credentials) leave the Kafka record uncommitted so it is retried; permanent
+refusals (all recipients or the sender refused, a 5xx data error) are logged
+and skipped.
 
 The scheduler runs at the start of each hour from 09:00 through 17:00 Monday to
 Friday in `Europe/Minsk`. The event chain skips current download, core

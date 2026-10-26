@@ -5,11 +5,11 @@ from unittest.mock import Mock, patch
 
 from app.contracts.models import Envelope
 from app.messaging.topics import CORE_NOTIFICATIONS
-from app.notifications import consumer
-from app.notifications.consumer import handle_notification
+from app.notifications.bot import consumer
+from app.notifications.bot.consumer import handle_notification
 
 
-@patch("app.notifications.consumer.send_telegram_message")
+@patch("app.notifications.bot.consumer.send_telegram_message")
 def test_failure_text_names_the_service_and_error_type(send):
     payload = {"service": "core", "error_type": "ValueError", "error": "bad input"}
 
@@ -18,14 +18,14 @@ def test_failure_text_names_the_service_and_error_type(send):
     send.assert_called_once_with("Ошибка сервиса core (ValueError): bad input")
 
 
-@patch("app.notifications.consumer.send_telegram_message")
+@patch("app.notifications.bot.consumer.send_telegram_message")
 def test_failure_text_falls_back_to_defaults_for_missing_fields(send):
     handle_notification(Envelope.create("failure", {}), None)
 
     send.assert_called_once_with("Ошибка сервиса unknown (Error): ")
 
 
-@patch("app.notifications.consumer.send_telegram_message")
+@patch("app.notifications.bot.consumer.send_telegram_message")
 def test_failure_text_includes_pipeline_correlation_id(send):
     message = Envelope.create(
         "failure",
@@ -40,7 +40,7 @@ def test_failure_text_includes_pipeline_correlation_id(send):
     )
 
 
-@patch("app.notifications.consumer.send_telegram_message")
+@patch("app.notifications.bot.consumer.send_telegram_message")
 def test_change_report_lists_one_change_per_line(send):
     changes = ["Артикул A, цена изменилась", "Артикул B, количество изменилось"]
 
@@ -52,23 +52,23 @@ def test_change_report_lists_one_change_per_line(send):
     )
 
 
-@patch("app.notifications.consumer.send_telegram_message")
+@patch("app.notifications.bot.consumer.send_telegram_message")
 def test_change_report_without_a_changes_key_is_ignored(send):
     handle_notification(Envelope.create("detailed_changes", {}), None)
 
     send.assert_not_called()
 
 
-@patch("app.notifications.consumer.send_telegram_message")
+@patch("app.notifications.bot.consumer.send_telegram_message")
 def test_change_report_with_null_changes_is_ignored(send):
     handle_notification(Envelope.create("detailed_changes", {"changes": None}), None)
 
     send.assert_not_called()
 
 
-@patch("app.notifications.consumer.send_telegram_message")
+@patch("app.notifications.bot.consumer.send_telegram_message")
 def test_unknown_commands_are_logged_and_not_sent(send, caplog):
-    with caplog.at_level(logging.WARNING, logger="app.notifications.consumer"):
+    with caplog.at_level(logging.WARNING, logger="app.notifications.bot.consumer"):
         handle_notification(Envelope.create("surprise", {}), None)
 
     send.assert_not_called()
@@ -93,7 +93,7 @@ def test_main_runs_the_notification_worker(monkeypatch):
     )
     assert args[3].func is handle_notification
     assert args[3].keywords == {"settings": settings}
-    assert kwargs == {"service_name": "notifications"}
+    assert kwargs == {"service_name": "notifications_bot"}
 
 
 def test_a_first_run_report_listing_hundreds_of_articles_is_delivered_in_full(

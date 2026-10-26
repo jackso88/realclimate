@@ -17,7 +17,7 @@ from app.messaging.config import load_client_settings
 from app.messaging.kafka import sanitize_error
 from app.contracts.models import Envelope
 from app.messaging.topics import HEALTH_HEARTBEATS
-from app.notifications.telegram import send_telegram_message
+from app.notifications.bot.telegram import send_telegram_message
 
 logger = logging.getLogger(__name__)
 

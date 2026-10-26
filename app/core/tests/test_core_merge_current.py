@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Pytest suite for merge_current.py.
 
 Run with::

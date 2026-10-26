@@ -37,11 +37,11 @@ def test_global_limit_must_be_a_positive_integer(environment, value):
 
 
 def test_per_service_overrides_are_parsed(environment):
-    environment["HEALTH_MAX_BUSY_OVERRIDES"] = "core=600, notifications = 120"
+    environment["HEALTH_MAX_BUSY_OVERRIDES"] = "core=600, notifications_bot = 120"
 
     settings = load_settings()
 
-    assert settings.busy_limit_overrides == {"core": 600, "notifications": 120}
+    assert settings.busy_limit_overrides == {"core": 600, "notifications_bot": 120}
 
 
 def test_empty_override_entries_are_ignored(environment):
@@ -67,7 +67,7 @@ def test_an_override_for_an_unknown_service_is_rejected(environment):
 
 def test_overrides_may_only_name_monitored_services(environment):
     environment["HEALTH_MONITORED_SERVICES"] = "core,uploader"
-    environment["HEALTH_MAX_BUSY_OVERRIDES"] = "notifications=120"
+    environment["HEALTH_MAX_BUSY_OVERRIDES"] = "notifications_bot=120"
 
-    with pytest.raises(ValueError, match="unknown service 'notifications'"):
+    with pytest.raises(ValueError, match="unknown service 'notifications_bot'"):
         load_settings()

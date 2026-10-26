@@ -3,7 +3,7 @@
 import logging
 import os
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from app.rate_limiter.models import RateLimiterSettings, RateLimiterEnvironment
 
