@@ -163,9 +163,6 @@ services:
     environment: *auth_env
     volumes:
       - *kafka_ca_volume
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       rate_limiter: {condition: service_started}
@@ -182,9 +179,6 @@ services:
       TAPTOP_SHOP_ID: ${TAPTOP_SHOP_ID:?Set TAPTOP_SHOP_ID in .env}
     volumes:
       - *kafka_ca_volume
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       rate_limiter: {condition: service_started}
@@ -206,9 +200,6 @@ services:
     volumes:
       - *kafka_ca_volume
       - ../../app/downloader/reference/credentials:/app/app/downloader/reference/credentials
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       rate_limiter: {condition: service_started}
@@ -283,9 +274,6 @@ services:
       TAPTOP_SHOP_ID: ${TAPTOP_SHOP_ID:?Set TAPTOP_SHOP_ID in .env}
     volumes:
       - *kafka_ca_volume
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       rate_limiter: {condition: service_started}
@@ -320,9 +308,6 @@ services:
       HEALTH_MAX_BUSY_OVERRIDES: ${HEALTH_MAX_BUSY_OVERRIDES:-}
     volumes:
       - *kafka_ca_volume
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       rate_limiter: {condition: service_started}
@@ -342,9 +327,6 @@ services:
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
 
   notifications_email:
     container_name: notifications_email
@@ -365,9 +347,6 @@ services:
     restart: unless-stopped
     volumes:
       - *kafka_ca_volume
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
 
 volumes:
   kafka_data:
