@@ -2,9 +2,7 @@
 
 import logging
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from app.uploader.models import UploaderEnvironment
@@ -13,12 +11,11 @@ from app.uploader.exceptions import UploaderConfigurationError
 from app.uploader.models import Settings
 
 
-def load_settings(env_file: str | Path | None = None) -> Settings:
+def load_settings() -> Settings:
     """Load, validate, and convert the uploader's CMS and Kafka settings.
 
-    Args:
-        env_file: Optional dotenv file. Otherwise the repository-root ``.env``
-            is loaded when present; process environment values take precedence.
+    The values are read from the process environment, which the container
+    runtime populates; no dotenv file is read.
 
     Returns:
         Validated settings needed to upload and import CSV data.
@@ -26,10 +23,6 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
     Raises:
         UploaderConfigurationError: If required values are missing or invalid.
     """
-    if env_file is None:
-        env_file = Path(__file__).resolve().parents[2] / ".env"
-    load_dotenv(dotenv_path=env_file, override=False)
-
     values = dict(os.environ)
     required = ("TAPTOP_CMS_URL", "TAPTOP_SHOP_ID", "TAPTOP_VER_ID", "TAPTOP_ACCESS")
     missing = [key for key in required if not values.get(key)]

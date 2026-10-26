@@ -1,7 +1,7 @@
 """Configuration loading and spreadsheet helpers.
 
-Settings are read from a ``.env`` file. Paths that are relative are
-resolved against the directory that contains the ``.env`` file.
+Settings are read from the process environment, which the container runtime
+populates. Paths that are relative are resolved against the project root.
 """
 
 from __future__ import annotations
@@ -10,11 +10,15 @@ import logging
 import os
 import re
 from pathlib import Path
-from dotenv import load_dotenv
+
 from pydantic import ValidationError
 
 from app.downloader.reference.exceptions import ReferenceConfigurationError
 from app.downloader.reference.models import ReferenceDownloaderEnvironment, Settings
+
+# Directory against which relative credential paths are resolved. It is the
+# repository root, which is ``/app`` inside the container image.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # Regex that extracts the spreadsheet ID from a full Google Sheets URL.
 SPREADSHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
@@ -64,8 +68,8 @@ def _resolve_path(value: str, base_dir: Path) -> Path:
     return path if path.is_absolute() else base_dir / path
 
 
-def load_settings(dotenv_path: Path | None = None) -> Settings:
-    """Load application settings from environment variables or a ``.env`` file.
+def load_settings() -> Settings:
+    """Load application settings from environment variables.
 
     Required environment variables:
 
@@ -77,32 +81,14 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
     * Optional user OAuth paths in service-account mode for permission-denied
         fallback
 
-    Args:
-        dotenv_path: Explicit path to the ``.env`` file. When omitted,
-            the function looks for ``.env`` at the project root, four parent
-            directories above this module.
+    Relative file paths are resolved against :data:`PROJECT_ROOT`.
 
     Returns:
         A frozen :class:`Settings` instance.
 
     Raises:
-        FileNotFoundError: If an explicitly supplied ``.env`` file is missing.
         ReferenceConfigurationError: If a required environment variable is missing.
     """
-    if dotenv_path is None:
-        # Project root is four levels above this package module.
-        dotenv_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-
-    base_dir = dotenv_path.resolve().parent
-    is_repository_default = (
-        dotenv_path == Path(__file__).resolve().parent.parent.parent.parent / ".env"
-    )
-    if not is_repository_default and not dotenv_path.is_file():
-        raise FileNotFoundError(f".env not found: {dotenv_path}")
-
-    if dotenv_path.is_file():
-        load_dotenv(dotenv_path, override=False)
-
     values = dict(os.environ)
     auth_mode_value = values.get("GOOGLE_AUTH_MODE", "user").strip().lower()
     required = ["GOOGLE_SHEET_URL", "GOOGLE_SHEET_NAME"]
@@ -127,18 +113,18 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         spreadsheet_url=config.spreadsheet_url,
         sheet_name=config.sheet_name,
         credentials_file=(
-            _resolve_path(str(config.credentials_file), base_dir)
+            _resolve_path(str(config.credentials_file), PROJECT_ROOT)
             if config.credentials_file
             else None
         ),
         token_file=(
-            _resolve_path(str(config.token_file), base_dir)
+            _resolve_path(str(config.token_file), PROJECT_ROOT)
             if config.token_file
             else None
         ),
         auth_mode=config.auth_mode,
         service_account_file=(
-            _resolve_path(str(config.service_account_file), base_dir)
+            _resolve_path(str(config.service_account_file), PROJECT_ROOT)
             if config.service_account_file
             else None
         ),

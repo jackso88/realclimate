@@ -1,11 +1,7 @@
 """Tests for uploader CMS settings loading."""
 
-from pathlib import Path
-from unittest.mock import Mock
-
 import pytest
 
-from app.uploader import config
 from app.uploader.config import load_settings
 from app.uploader.exceptions import UploaderConfigurationError
 from app.uploader.models import Settings
@@ -36,7 +32,7 @@ def cms_environment(monkeypatch):
 
 
 def test_load_settings_builds_immutable_settings(cms_environment):
-    settings = load_settings(env_file="/path/that/does/not/exist")
+    settings = load_settings()
 
     assert settings == Settings(
         ver_id=7,
@@ -47,7 +43,7 @@ def test_load_settings_builds_immutable_settings(cms_environment):
 
 
 def test_trailing_slash_is_removed_from_the_cms_url(cms_environment):
-    settings = load_settings(env_file="/path/that/does/not/exist")
+    settings = load_settings()
 
     assert not settings.cms_url.endswith("/")
 
@@ -57,12 +53,12 @@ def test_each_required_setting_is_enforced(cms_environment, monkeypatch, missing
     monkeypatch.delenv(missing)
 
     with pytest.raises(UploaderConfigurationError, match=missing):
-        load_settings(env_file="/path/that/does/not/exist")
+        load_settings()
 
 
 def test_all_missing_settings_are_reported_together():
     with pytest.raises(UploaderConfigurationError) as error:
-        load_settings(env_file="/path/that/does/not/exist")
+        load_settings()
 
     for name in REQUIRED:
         assert name in str(error.value)
@@ -73,7 +69,7 @@ def test_cms_url_needs_an_http_scheme(cms_environment, monkeypatch, url):
     monkeypatch.setenv("TAPTOP_CMS_URL", url)
 
     with pytest.raises(UploaderConfigurationError, match="http:// or https://"):
-        load_settings(env_file="/path/that/does/not/exist")
+        load_settings()
 
 
 @pytest.mark.parametrize("name", ["TAPTOP_SHOP_ID", "TAPTOP_VER_ID"])
@@ -81,25 +77,13 @@ def test_numeric_identifiers_must_be_integers(cms_environment, monkeypatch, name
     monkeypatch.setenv(name, "not-a-number")
 
     with pytest.raises(UploaderConfigurationError, match="must be integers"):
-        load_settings(env_file="/path/that/does/not/exist")
+        load_settings()
 
 
 def test_http_cms_urls_are_accepted(cms_environment, monkeypatch):
     monkeypatch.setenv("TAPTOP_CMS_URL", "http://localhost:8080/cms")
 
-    settings = load_settings(env_file="/path/that/does/not/exist")
+    settings = load_settings()
 
     assert settings.cms_url == "http://localhost:8080/cms"
 
-
-def test_default_env_file_is_the_dotenv_in_the_repository_root(monkeypatch):
-    loader = Mock()
-    monkeypatch.setattr(config, "load_dotenv", loader)
-
-    with pytest.raises(UploaderConfigurationError):
-        load_settings()
-
-    path = Path(loader.call_args.kwargs["dotenv_path"])
-    assert path.name == ".env"
-    assert (path.parent / "app" / "uploader").is_dir()
-    assert loader.call_args.kwargs["override"] is False

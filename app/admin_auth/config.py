@@ -2,9 +2,7 @@
 
 import logging
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from app.admin_auth.models import AdminEnvironment
@@ -13,17 +11,15 @@ from app.admin_auth.exceptions import AdminLoginError
 from app.admin_auth.models import AdminSettings
 
 
-def load_settings(env_file: str | Path | None = None) -> AdminSettings:
+def load_settings() -> AdminSettings:
     """Load and validate the settings required by admin authentication.
 
     ``ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS`` controls how long the service
     reuses a serialized authenticated session; it defaults to 14400 seconds
     (4 hours).
 
-    Args:
-        env_file: Optional path to an environment file. When omitted, the
-            project-root ``.env`` is loaded if present; existing environment
-            variables take precedence.
+    The values are read from the process environment, which the container
+    runtime populates; no dotenv file is read.
 
     Returns:
         Immutable authentication settings for one worker process.
@@ -31,8 +27,6 @@ def load_settings(env_file: str | Path | None = None) -> AdminSettings:
     Raises:
         AdminLoginError: If required values are missing or numeric IDs invalid.
     """
-    project_root = Path(__file__).resolve().parents[2]
-    load_dotenv(env_file or project_root / ".env", override=False)
     required = (
         "TAPTOP_BASE_URL",
         "TAPTOP_CMS_URL",

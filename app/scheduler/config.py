@@ -2,19 +2,14 @@
 
 import logging
 import os
-from pathlib import Path
-from dotenv import load_dotenv
+
 from pydantic import ValidationError
 
 from app.scheduler.models import SchedulerSettings
 
 
-def load_settings(env_file: str | Path | None = None) -> SchedulerSettings:
-    """Load and validate scheduler settings from the process or dotenv file.
-
-    Args:
-        env_file: Optional dotenv path. When omitted, only process environment
-            variables are read.
+def load_settings() -> SchedulerSettings:
+    """Load and validate scheduler settings from the process environment.
 
     Returns:
         Validated scheduling and Kafka settings.
@@ -22,8 +17,6 @@ def load_settings(env_file: str | Path | None = None) -> SchedulerSettings:
     Raises:
         ValueError: If the timezone or RPC timeout is invalid.
     """
-    if env_file is not None:
-        load_dotenv(dotenv_path=env_file, override=False)
     try:
         return SchedulerSettings.model_validate(dict(os.environ))
     except ValidationError as error:

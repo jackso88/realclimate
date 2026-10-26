@@ -6,7 +6,7 @@ from app.notifications.bot.models import NotificationSettings
 
 
 def load_settings() -> NotificationSettings:
-    """Load the notification service's process and dotenv configuration.
+    """Load the notification service's process-environment configuration.
 
     Returns:
         Telegram and Kafka settings. Bot credentials remain optional until a

@@ -23,7 +23,6 @@ OPTIONAL = (
     "TAPTOP_USERNAME_FIELD",
     "TAPTOP_PASSWORD_FIELD",
 )
-MISSING_FILE = "/path/that/does/not/exist"
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +40,7 @@ def auth_environment(monkeypatch):
 
 
 def test_defaults_are_applied_to_the_optional_settings(auth_environment):
-    settings = load_settings(env_file=MISSING_FILE)
+    settings = load_settings()
 
     assert settings == AdminSettings(
         base_url="https://admin.invalid",
@@ -61,7 +60,7 @@ def test_defaults_are_applied_to_the_optional_settings(auth_environment):
 
 
 def test_trailing_slashes_are_stripped_from_both_urls(auth_environment):
-    settings = load_settings(env_file=MISSING_FILE)
+    settings = load_settings()
 
     assert not settings.base_url.endswith("/")
     assert not settings.cms_url.endswith("/")
@@ -74,7 +73,7 @@ def test_login_form_details_can_be_overridden(auth_environment, monkeypatch):
     monkeypatch.setenv("TAPTOP_USERNAME_FIELD", "login")
     monkeypatch.setenv("TAPTOP_PASSWORD_FIELD", "pass")
 
-    settings = load_settings(env_file=MISSING_FILE)
+    settings = load_settings()
 
     assert settings.login_path == "/sign-in"
     assert settings.mosaic_path == "/panel"
@@ -88,12 +87,12 @@ def test_each_required_setting_is_enforced(auth_environment, monkeypatch, missin
     monkeypatch.delenv(missing)
 
     with pytest.raises(AdminLoginError, match=missing):
-        load_settings(env_file=MISSING_FILE)
+        load_settings()
 
 
 def test_every_missing_setting_is_listed_in_one_error():
     with pytest.raises(AdminLoginError) as error:
-        load_settings(env_file=MISSING_FILE)
+        load_settings()
 
     for name in REQUIRED:
         assert name in str(error.value)
@@ -104,4 +103,4 @@ def test_numeric_identifiers_must_be_integers(auth_environment, monkeypatch, nam
     monkeypatch.setenv(name, "twelve")
 
     with pytest.raises(AdminLoginError, match="must be integers"):
-        load_settings(env_file=MISSING_FILE)
+        load_settings()
