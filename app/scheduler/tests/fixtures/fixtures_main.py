@@ -5,12 +5,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.scheduler import main as scheduler_main
-
 
 @pytest.fixture
 def scheduler_daemon(monkeypatch):
     """Replace every collaborator of ``main`` and record the call order."""
+    from app.scheduler import main as scheduler_main
+
     events = []
     scheduler = Mock()
     scheduler.start.side_effect = lambda: events.append("scheduler.start")

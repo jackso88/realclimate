@@ -5,8 +5,6 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.downloader.reference import consumer
-
 SETTINGS = SimpleNamespace(
     spreadsheet_url="https://docs.google.com/spreadsheets/d/SHEET123/edit",
     sheet_name="1. Для заливки",
@@ -19,6 +17,8 @@ SETTINGS = SimpleNamespace(
 @pytest.fixture
 def reference_sheet(monkeypatch):
     """Mock the Google client chain and the reply helpers used by the handler."""
+    from app.downloader.reference import consumer
+
     parts = SimpleNamespace(
         worksheet=Mock(),
         spreadsheet=Mock(),

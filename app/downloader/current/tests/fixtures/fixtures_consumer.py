@@ -5,19 +5,21 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.downloader.current import consumer
-from app.downloader.current.models import DownloadedCsv
-
 
 @pytest.fixture
 def current_bypass_rate_limit(monkeypatch):
     """Keep handler tests independent of Kafka infrastructure."""
+    from app.downloader.current import consumer
+
     monkeypatch.setattr(consumer, "rate_limit_session", lambda session, *_: session)
 
 
 @pytest.fixture
 def current_steps(monkeypatch):
     """Mock each CMS step so a test can break exactly one of them."""
+    from app.downloader.current.models import DownloadedCsv
+    from app.downloader.current import consumer
+
     parts = SimpleNamespace(
         failure=Mock(),
         publish=Mock(),

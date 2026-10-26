@@ -5,8 +5,6 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from app.messaging import kafka
-
 
 class FakeMessage:
     """Represent a consumed Kafka record."""
@@ -114,6 +112,8 @@ class FakeConsumer:
 @pytest.fixture
 def fake_kafka(monkeypatch):
     """Install a fake confluent_kafka module; tests assign ``state.consumer``."""
+    from app.messaging import kafka
+
     events = []
     state = SimpleNamespace(
         events=events,
@@ -142,6 +142,8 @@ def fake_kafka(monkeypatch):
 @pytest.fixture
 def kafka_clients(monkeypatch):
     """Install fake confluent_kafka constructors and return their instances."""
+    from app.messaging import kafka
+
     producer = FakeProducer({})
     consumers = [FakeConsumer({})]
 

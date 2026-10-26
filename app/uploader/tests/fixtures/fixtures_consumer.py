@@ -5,18 +5,20 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.uploader import consumer
-
 
 @pytest.fixture
 def uploader_bypass_rate_limit(monkeypatch):
     """Keep consumer contract tests independent of Kafka infrastructure."""
+    from app.uploader import consumer
+
     monkeypatch.setattr(consumer, "rate_limit_session", lambda session, *_: session)
 
 
 @pytest.fixture
 def uploader_steps(monkeypatch):
     """Mock every CMS step and the service failure publisher."""
+    from app.uploader import consumer
+
     parts = SimpleNamespace(
         failure=Mock(),
         delete=Mock(),
