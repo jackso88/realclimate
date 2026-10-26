@@ -2,6 +2,8 @@
 
 import pytest
 
+from app.notifications.email.sender import build_notification
+
 
 @pytest.fixture
 def changes():
@@ -29,3 +31,8 @@ def make_envelope():
         return Envelope.create(command, payload, correlation_id=correlation_id)
 
     return factory
+
+
+@pytest.fixture
+def notification(changes):
+    return build_notification(changes, "corr-123")

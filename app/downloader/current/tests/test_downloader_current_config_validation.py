@@ -1,8 +1,5 @@
 """Validation tests for the current downloader's CMS settings."""
 
-import os
-from unittest.mock import patch
-
 import pytest
 
 from app.downloader.current.config import load_settings
@@ -16,15 +13,8 @@ VALID = {
 }
 
 
-@pytest.fixture
-def environment():
-    """Run each test with an empty environment that is restored afterwards."""
-    with patch.dict(os.environ, {}, clear=True):
-        yield os.environ
-
-
-def test_access_value_is_kept_verbatim(environment):
-    environment.update(VALID)
+def test_access_value_is_kept_verbatim(clean_environment):
+    clean_environment.update(VALID)
 
     settings = load_settings()
 
@@ -32,15 +22,15 @@ def test_access_value_is_kept_verbatim(environment):
 
 
 @pytest.mark.parametrize("missing", sorted(VALID))
-def test_each_required_setting_is_enforced(environment, missing):
-    environment.update(VALID)
-    del environment[missing]
+def test_each_required_setting_is_enforced(clean_environment, missing):
+    clean_environment.update(VALID)
+    del clean_environment[missing]
 
     with pytest.raises(ConfigurationError, match=missing):
         load_settings()
 
 
-def test_every_missing_setting_is_listed_in_one_error(environment):
+def test_every_missing_setting_is_listed_in_one_error(clean_environment):
     with pytest.raises(ConfigurationError) as error:
         load_settings()
 
@@ -49,19 +39,18 @@ def test_every_missing_setting_is_listed_in_one_error(environment):
 
 
 @pytest.mark.parametrize("url", ["ftp://cms.example", "cms.example", "/relative"])
-def test_cms_url_needs_an_http_scheme(environment, url):
-    environment.update(VALID)
-    environment["TAPTOP_CMS_URL"] = url
+def test_cms_url_needs_an_http_scheme(clean_environment, url):
+    clean_environment.update(VALID)
+    clean_environment["TAPTOP_CMS_URL"] = url
 
     with pytest.raises(ConfigurationError, match="http:// or https://"):
         load_settings()
 
 
 @pytest.mark.parametrize("name", ["TAPTOP_SHOP_ID", "TAPTOP_VER_ID"])
-def test_numeric_identifiers_must_be_integers(environment, name):
-    environment.update(VALID)
-    environment[name] = "twenty"
+def test_numeric_identifiers_must_be_integers(clean_environment, name):
+    clean_environment.update(VALID)
+    clean_environment[name] = "twenty"
 
     with pytest.raises(ConfigurationError, match=f"{name} must be an integer"):
         load_settings()
-

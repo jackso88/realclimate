@@ -73,14 +73,6 @@ def queue_page(*tasks):
     return FakeResponse(f"<html>{rows}</html>")
 
 
-@pytest.fixture
-def no_sleep(monkeypatch):
-    """Skip real waiting between polls and record the requested delays."""
-    delays = []
-    monkeypatch.setattr(queue_processor, "sleep", delays.append)
-    return delays
-
-
 def test_upload_rejects_content_above_the_cms_limit(monkeypatch):
     monkeypatch.setattr(queue_processor, "MAX_UPLOAD_SIZE", 10)
     session = FakeSession()
@@ -194,7 +186,7 @@ def test_start_import_propagates_http_errors():
         )
 
 
-def test_wait_returns_the_new_task_once_it_is_done(no_sleep):
+def test_wait_returns_the_new_task_once_it_is_done(uploader_no_sleep):
     session = FakeSession(
         gets=[
             queue_page((5, "Готово")),
@@ -207,10 +199,10 @@ def test_wait_returns_the_new_task_once_it_is_done(no_sleep):
 
     assert task == ImportQueueItem(cron_num=6, status="Готово")
     assert len(session.calls) == 3
-    assert no_sleep == [5, 5]
+    assert uploader_no_sleep == [5, 5]
 
 
-def test_wait_ignores_tasks_that_existed_before_submission(no_sleep):
+def test_wait_ignores_tasks_that_existed_before_submission(uploader_no_sleep):
     session = FakeSession(gets=[queue_page((5, "Готово")), queue_page((6, "Готово"))])
 
     task = wait_for_import_completion(session, SETTINGS, baseline_cron_num=5)
@@ -218,17 +210,17 @@ def test_wait_ignores_tasks_that_existed_before_submission(no_sleep):
     assert task.cron_num == 6
 
 
-def test_wait_stops_immediately_when_the_import_fails(no_sleep):
+def test_wait_stops_immediately_when_the_import_fails(uploader_no_sleep):
     session = FakeSession(gets=[queue_page((6, "Ошибка импорта"))])
 
     with pytest.raises(ImportQueueError, match="#6"):
         wait_for_import_completion(session, SETTINGS, baseline_cron_num=5)
 
     assert len(session.calls) == 1
-    assert no_sleep == []
+    assert uploader_no_sleep == []
 
 
-def test_wait_times_out_and_reports_the_last_status(monkeypatch, no_sleep):
+def test_wait_times_out_and_reports_the_last_status(monkeypatch, uploader_no_sleep):
     clock = iter([0, 10_000])
     monkeypatch.setattr(queue_processor, "monotonic", lambda: next(clock))
     session = FakeSession(gets=[queue_page((6, "Выполняется"))])
@@ -243,7 +235,7 @@ def test_wait_times_out_and_reports_the_last_status(monkeypatch, no_sleep):
     assert "30 seconds" in str(error.value)
 
 
-def test_wait_times_out_when_the_task_never_appears(monkeypatch, no_sleep):
+def test_wait_times_out_when_the_task_never_appears(monkeypatch, uploader_no_sleep):
     clock = iter([0, 10_000])
     monkeypatch.setattr(queue_processor, "monotonic", lambda: next(clock))
     session = FakeSession(gets=[queue_page((5, "Готово"))])

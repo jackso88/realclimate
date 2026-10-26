@@ -20,11 +20,6 @@ from app.notifications.email.sender import (
 )
 
 
-@pytest.fixture
-def notification(changes):
-    return build_notification(changes, "corr-123")
-
-
 def test_notification_lists_every_change_without_the_correlation_id(changes):
     notification = build_notification(changes, "corr-123")
 

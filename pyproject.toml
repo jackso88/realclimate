@@ -41,6 +41,13 @@ addopts = [
     "-p", "app.notifications.email.tests.fixtures",
     "-p", "app.contracts.tests.fixtures",
     "-p", "app.core.tests.fixtures",
+    "-p", "app.tests.fixtures",
+    "-p", "app.uploader.tests.fixtures",
+    "-p", "app.downloader.current.tests.fixtures",
+    "-p", "app.downloader.reference.tests.fixtures",
+    "-p", "app.scheduler.tests.fixtures",
+    "-p", "app.admin_auth.tests.fixtures",
+    "-p", "app.messaging.tests.fixtures",
 ]
 
 [tool.coverage.run]

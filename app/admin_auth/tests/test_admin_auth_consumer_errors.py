@@ -10,6 +10,8 @@ from app.admin_auth.exceptions import AdminLoginError
 from app.admin_auth.models import AdminSettings, SessionSnapshot
 from app.messaging.topics import ADMIN_AUTH_REQUESTS
 
+pytestmark = pytest.mark.usefixtures("admin_empty_session_cache")
+
 SETTINGS = AdminSettings(
     base_url="https://admin.invalid",
     cms_url="https://admin.invalid/cms",
@@ -19,14 +21,6 @@ SETTINGS = AdminSettings(
     ver_id=123,
     design_id=456,
 )
-
-
-@pytest.fixture(autouse=True)
-def empty_cache():
-    """Keep the module-level session cache from leaking between tests."""
-    consumer.session_cache.clear()
-    yield
-    consumer.session_cache.clear()
 
 
 def test_invalid_settings_are_reported_as_an_error_reply(monkeypatch):

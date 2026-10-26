@@ -1,7 +1,6 @@
 """Unit tests for Kafka transport helpers using a fake broker client."""
 
 import sys
-from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -12,6 +11,10 @@ from app.messaging.exceptions import (
     RetryableMessageError,
 )
 from app.contracts.models import Envelope
+from app.messaging.tests.fixtures.fixtures_kafka import (
+    FakeConsumer,
+    FakeMessage,
+)
 
 
 class FakeError:
@@ -26,125 +29,6 @@ class FakeError:
 
     def code(self):
         return self._code
-
-
-class FakeMessage:
-    """Represent a consumed Kafka record."""
-
-    def __init__(self, value=b"", error=None):
-        self._value = value
-        self._error = error
-
-    def value(self):
-        return self._value
-
-    def error(self):
-        return self._error
-
-    def topic(self):
-        return "jobs"
-
-    def partition(self):
-        return 0
-
-    def offset(self):
-        return 4
-
-
-class FakeProducer:
-    """Record produced messages and emulate producer acknowledgements."""
-
-    def __init__(self, config):
-        self.config = config
-        self.produced = []
-        self.remaining = 0
-        self.polled = []
-
-    def produce(self, topic, **kwargs):
-        self.produced.append((topic, kwargs))
-
-    def poll(self, timeout):
-        self.polled.append(timeout)
-
-    def flush(self, timeout):
-        return self.remaining
-
-
-class FakeConsumer:
-    """Provide scripted consumer results and record lifecycle calls."""
-
-    def __init__(self, config, *, messages=(), watermarks=(0, 0)):
-        self.config = config
-        self.messages = list(messages)
-        self.watermarks = watermarks
-        self.subscriptions = []
-        self.assignments = []
-        self.commits = []
-        self.seeks = []
-        self.closed = False
-
-    def subscribe(self, topics):
-        self.subscriptions.append(topics)
-
-    def assignment(self):
-        return [object()]
-
-    def poll(self, timeout):
-        if self.messages:
-            result = self.messages.pop(0)
-            if isinstance(result, BaseException):
-                raise result
-            return result
-        return None
-
-    def get_watermark_offsets(self, topic_partition, timeout):
-        return self.watermarks
-
-    def assign(self, partitions):
-        self.assignments.append(partitions)
-
-    def commit(self, **kwargs):
-        self.commits.append(kwargs)
-
-    def seek(self, partition):
-        self.seeks.append(partition)
-
-    def close(self):
-        self.closed = True
-
-
-@pytest.fixture
-def kafka_clients(monkeypatch):
-    """Install fake confluent_kafka constructors and return their instances."""
-    producer = FakeProducer({})
-    consumers = [FakeConsumer({})]
-
-    def make_consumer(config):
-        consumers[0].config = config
-        return consumers[0]
-
-    fake_module = ModuleType("confluent_kafka")
-
-    def make_producer(config):
-        producer.config = config
-        return producer
-
-    fake_module.Producer = make_producer
-    fake_module.Consumer = make_consumer
-    fake_module.TopicPartition = lambda *args: args
-    fake_module.KafkaError = SimpleNamespace(_PARTITION_EOF=-191)
-    monkeypatch.setitem(sys.modules, "confluent_kafka", fake_module)
-    monkeypatch.setattr(
-        kafka,
-        "load_client_settings",
-        lambda servers: SimpleNamespace(
-            to_dict=lambda: {
-                "bootstrap.servers": servers,
-                "security.protocol": "SASL_SSL",
-            }
-        ),
-    )
-    return producer, consumers
 
 
 def test_sanitize_error_redacts_credentials():
