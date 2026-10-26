@@ -13,7 +13,6 @@ from pydantic import (
 )
 
 EMAIL_ADDRESS_PATTERN = re.compile(r"^[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+$")
-REQUIRED_RECIPIENT_COUNT = 2
 
 
 def _is_email_address(value: str) -> bool:
@@ -45,7 +44,7 @@ class EmailSettings(BaseModel):
         smtp_timeout_seconds: Maximum time for each SMTP network operation
             (``EMAIL_SMTP_TIMEOUT_SECONDS``).
         sender: Address shown in the ``From`` header (``EMAIL_SENDER``).
-        recipients: Exactly two distinct destination addresses, given as a
+        recipients: One or more distinct destination addresses, given as a
             comma-separated list (``EMAIL_RECIPIENTS``).
     """
 
@@ -117,17 +116,14 @@ class EmailSettings(BaseModel):
 
     @field_validator("recipients")
     @classmethod
-    def recipients_are_two_distinct_addresses(cls, value: list[str]) -> list[str]:
-        """Ensure there are exactly two valid, distinct recipient addresses.
+    def recipients_are_distinct_addresses(cls, value: list[str]) -> list[str]:
+        """Ensure there is at least one recipient and all are valid and distinct.
 
         Args:
             value: Split recipient list.
         """
-        if len(value) != REQUIRED_RECIPIENT_COUNT:
-            raise ValueError(
-                f"EMAIL_RECIPIENTS must contain exactly {REQUIRED_RECIPIENT_COUNT} "
-                "addresses"
-            )
+        if not value:
+            raise ValueError("EMAIL_RECIPIENTS must contain at least one address")
         invalid = [address for address in value if not _is_email_address(address)]
         if invalid:
             raise ValueError("EMAIL_RECIPIENTS contains an invalid email address")

@@ -161,14 +161,14 @@ otherwise print as part of the API URL.
 The `notifications_email` service consumes the same Kafka topic as the Telegram
 service (`notifications`), in its own consumer group (`email-notifications`), so both
 receive every message. It emails only non-empty `detailed_changes` reports to
-exactly two recipients in one message; failure reports and other commands are
+all configured recipients in one message; failure reports and other commands are
 ignored. The Kafka `correlation_id` is kept in the `X-Correlation-ID` header and
 in log lines; it is not written into the email body.
 
 Configure it with `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_SECURITY`
 (`starttls`, `ssl`, or `none`), optional `EMAIL_SMTP_USERNAME` and
 `EMAIL_SMTP_PASSWORD` (set both or neither), `EMAIL_SMTP_TIMEOUT_SECONDS`,
-`EMAIL_SENDER`, and `EMAIL_RECIPIENTS` (two distinct comma-separated
+`EMAIL_SENDER`, and `EMAIL_RECIPIENTS` (one or more distinct comma-separated
 addresses). Temporary SMTP failures (network errors, 4xx answers, rejected
 credentials) leave the Kafka record uncommitted so it is retried; permanent
 refusals (all recipients or the sender refused, a 5xx data error) are logged

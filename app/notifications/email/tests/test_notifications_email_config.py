@@ -63,6 +63,25 @@ def test_recipients_are_split_and_stripped(make_email_settings):
     assert settings.recipients == ["a@x.invalid", "b@y.invalid"]
 
 
+@pytest.mark.parametrize(
+    "recipients",
+    [
+        ["only@one.invalid"],
+        ["a@x.invalid", "b@y.invalid", "c@z.invalid"],
+        [f"user{number}@x.invalid" for number in range(10)],
+    ],
+)
+def test_any_positive_number_of_recipients_is_allowed(make_email_settings, recipients):
+    settings = make_email_settings(EMAIL_RECIPIENTS=",".join(recipients))
+
+    assert settings.recipients == recipients
+
+
+def test_empty_recipient_list_is_rejected_with_a_clear_message(make_email_settings):
+    with pytest.raises(ValidationError, match="at least one address"):
+        make_email_settings(EMAIL_RECIPIENTS="")
+
+
 def test_recipients_accept_an_already_split_list(make_email_settings):
     settings = make_email_settings(EMAIL_RECIPIENTS=["a@x.invalid", "b@y.invalid"])
 
@@ -95,8 +114,7 @@ def test_password_is_hidden_from_representations(email_settings):
         ("EMAIL_SMTP_TIMEOUT_SECONDS", "0"),
         ("EMAIL_SENDER", "not-an-address"),
         ("EMAIL_RECIPIENTS", ""),
-        ("EMAIL_RECIPIENTS", "only@one.invalid"),
-        ("EMAIL_RECIPIENTS", "a@x.invalid,b@y.invalid,c@z.invalid"),
+        ("EMAIL_RECIPIENTS", " , "),
         ("EMAIL_RECIPIENTS", "a@x.invalid,broken"),
         ("EMAIL_RECIPIENTS", "a@x.invalid,A@X.invalid"),
         ("KAFKA_BOOTSTRAP_SERVERS", ""),
