@@ -17,7 +17,7 @@ from app.downloader.current.config import load_settings
     clear=True,
 )
 def test_loads_only_export_service_settings():
-    settings = load_settings(env_file="/missing/.env")
+    settings = load_settings()
     assert settings.cms_url == "https://cms.example.test"
     assert settings.shop_id == 23
     assert settings.ver_id == 45

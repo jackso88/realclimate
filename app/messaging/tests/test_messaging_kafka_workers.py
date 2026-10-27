@@ -1,13 +1,13 @@
 """Tests for the RPC wait loop and the worker loop of the Kafka bus."""
 
-import sys
-from types import ModuleType, SimpleNamespace
-
 import pytest
 
 from app.messaging import kafka
 from app.messaging.exceptions import RetryableMessageError
 from app.contracts.models import Envelope
+from app.messaging.tests.fixtures.fixtures_kafka import (
+    FakeMessage,
+)
 
 
 class StopLoop(Exception):
@@ -26,47 +26,6 @@ class FakeKafkaError:
 
     def str(self):
         return self._text
-
-
-class FakeMessage:
-    """Represent a consumed Kafka record."""
-
-    def __init__(self, value=b"", error=None):
-        self._value = value
-        self._error = error
-
-    def value(self):
-        return self._value
-
-    def error(self):
-        return self._error
-
-    def topic(self):
-        return "jobs"
-
-    def partition(self):
-        return 0
-
-    def offset(self):
-        return 4
-
-
-class RecordingProducer:
-    """Remember produced records and acknowledge every flush."""
-
-    def __init__(self, events):
-        self.events = events
-        self.produced = []
-
-    def produce(self, topic, **kwargs):
-        self.events.append("produce")
-        self.produced.append((topic, kwargs))
-
-    def poll(self, timeout):
-        return 0
-
-    def flush(self, timeout):
-        return 0
 
 
 class ScriptedConsumer:
@@ -112,34 +71,6 @@ class ScriptedConsumer:
 
     def close(self):
         self.closed = True
-
-
-@pytest.fixture
-def fake_kafka(monkeypatch):
-    """Install a fake confluent_kafka module; tests assign ``state.consumer``."""
-    events = []
-    state = SimpleNamespace(
-        events=events,
-        producer=RecordingProducer(events),
-        consumer=None,
-        consumer_configs=[],
-    )
-
-    def make_consumer(config):
-        state.consumer_configs.append(config)
-        return state.consumer
-
-    def load_settings(servers):
-        return SimpleNamespace(to_dict=lambda: {"bootstrap.servers": servers})
-
-    module = ModuleType("confluent_kafka")
-    module.Producer = lambda config: state.producer
-    module.Consumer = make_consumer
-    module.TopicPartition = lambda *args: args
-    module.KafkaError = SimpleNamespace(_PARTITION_EOF=-191)
-    monkeypatch.setitem(sys.modules, "confluent_kafka", module)
-    monkeypatch.setattr(kafka, "load_client_settings", load_settings)
-    return state
 
 
 def reply_to_request(state, payload=None, correlation_id=None):

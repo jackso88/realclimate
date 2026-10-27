@@ -55,13 +55,6 @@ def response(text="", content=b"", error=None):
     return reply
 
 
-@pytest.fixture
-def no_sleep(monkeypatch):
-    delays = []
-    monkeypatch.setattr(queue_processor, "sleep", delays.append)
-    return delays
-
-
 def test_rows_without_a_number_or_link_are_skipped():
     html = (
         '<div class="cron-list-item"><span class="cron-num">#1</span></div>'
@@ -145,7 +138,7 @@ def test_export_request_propagates_http_errors():
         start_product_export(session, SETTINGS)
 
 
-def test_download_polls_until_a_newer_export_appears(no_sleep):
+def test_download_polls_until_a_newer_export_appears(current_no_sleep):
     archive = zip_bytes({"folder/export.csv": b"a;b\n"})
     session = Mock()
     session.get.side_effect = [
@@ -161,10 +154,10 @@ def test_download_polls_until_a_newer_export_appears(no_sleep):
     assert downloaded.filename == "export.csv"
     assert downloaded.archive_filename == "export.zip"
     assert downloaded.content == b"a;b\n"
-    assert no_sleep == [5, 5]
+    assert current_no_sleep == [5, 5]
 
 
-def test_download_times_out_when_no_newer_export_appears(monkeypatch, no_sleep):
+def test_download_times_out_when_no_newer_export_appears(monkeypatch, current_no_sleep):
     clock = iter([0, 10_000])
     monkeypatch.setattr(queue_processor, "monotonic", lambda: next(clock))
     session = Mock()
@@ -176,7 +169,7 @@ def test_download_times_out_when_no_newer_export_appears(monkeypatch, no_sleep):
         )
 
 
-def test_download_rejects_a_response_that_is_not_a_zip(no_sleep):
+def test_download_rejects_a_response_that_is_not_a_zip(current_no_sleep):
     session = Mock()
     session.get.side_effect = [response(queue_row(6)), response(content=b"<html>")]
 
@@ -184,7 +177,7 @@ def test_download_rejects_a_response_that_is_not_a_zip(no_sleep):
         download_latest_export_content(session, SETTINGS, after_cron_num=5)
 
 
-def test_download_rejects_a_zip_with_several_csv_files(no_sleep):
+def test_download_rejects_a_zip_with_several_csv_files(current_no_sleep):
     archive = zip_bytes({"a.csv": b"1", "b.csv": b"2"})
     session = Mock()
     session.get.side_effect = [response(queue_row(6)), response(content=archive)]

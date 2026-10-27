@@ -29,3 +29,10 @@ def make_envelope():
         return Envelope.create(command, payload, correlation_id=correlation_id)
 
     return factory
+
+
+@pytest.fixture
+def notification(changes):
+    from app.notifications.email.sender import build_notification
+
+    return build_notification(changes, "corr-123")

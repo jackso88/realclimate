@@ -10,11 +10,7 @@ from app.messaging.topics import CORE_PROCESS_RESULTS, REFERENCE_PIPELINE_COMPLE
 from app.uploader import consumer
 from app.uploader.models import ImportQueueItem, UploadedFile
 
-
-@pytest.fixture(autouse=True)
-def bypass_rate_limit_setup(monkeypatch):
-    """Keep consumer contract tests independent of Kafka infrastructure."""
-    monkeypatch.setattr(consumer, "rate_limit_session", lambda session, *_: session)
+pytestmark = pytest.mark.usefixtures("uploader_bypass_rate_limit")
 
 
 def test_uploader_imports_processed_csv_and_preserves_pipeline_id(monkeypatch):

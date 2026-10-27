@@ -2,9 +2,7 @@
 
 import logging
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from app.downloader.current.models import CurrentDownloaderConfig
@@ -13,12 +11,11 @@ from app.downloader.current.exceptions import ConfigurationError
 from app.downloader.current.models import Settings
 
 
-def load_settings(env_file: str | Path | None = None) -> Settings:
+def load_settings() -> Settings:
     """Load, validate, and convert downloader environment settings.
 
-    Args:
-        env_file: Optional dotenv file. When omitted, the repository-root
-            ``.env`` is loaded if present; process variables take precedence.
+    The values are read from the process environment, which the container
+    runtime populates; no dotenv file is read.
 
     Returns:
         Validated CMS and Kafka settings for the downloader.
@@ -27,10 +24,6 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         ConfigurationError: If required values are missing, URLs are invalid,
             or identifiers fail validation.
     """
-    if env_file is None:
-        env_file = Path(__file__).resolve().parents[3] / ".env"
-    load_dotenv(dotenv_path=env_file, override=False)
-
     values = dict(os.environ)
     required = ("TAPTOP_CMS_URL", "TAPTOP_SHOP_ID", "TAPTOP_VER_ID", "TAPTOP_ACCESS")
     missing = [name for name in required if not values.get(name)]

@@ -11,6 +11,7 @@ from app.downloader.reference import auth_cli, consumer, producer
 from app.downloader.reference.config import SCOPES
 from app.downloader.reference.exceptions import ReferenceAuthenticationError
 from app.contracts.models import Envelope
+from app.downloader.reference.tests.fixtures.fixtures_consumer import SETTINGS
 from app.messaging.payloads import decode_bytes
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.topics import (
@@ -20,59 +21,31 @@ from app.messaging.topics import (
     REFERENCE_SYNC_REQUESTS,
 )
 
-SETTINGS = SimpleNamespace(
-    spreadsheet_url="https://docs.google.com/spreadsheets/d/SHEET123/edit",
-    sheet_name="1. Для заливки",
-    credentials_file="credentials.json",
-    token_file="token.json",
-    bootstrap_servers="localhost:9092",
-)
-
 
 def make_request():
     return Envelope.create("sync_reference", {}, correlation_id="r-1")
 
 
-@pytest.fixture
-def sheet(monkeypatch):
-    """Mock the Google client chain and the reply helpers used by the handler."""
-    parts = SimpleNamespace(
-        worksheet=Mock(),
-        spreadsheet=Mock(),
-        client=Mock(),
-        failure=Mock(),
-        publish=Mock(return_value=True),
-        checkpoint=Mock(),
-        credentials=Mock(return_value="credentials"),
-    )
-    parts.worksheet.get_all_values.return_value = [["код", "модель"], ["НС-1", "A"]]
-    parts.spreadsheet.worksheet.return_value = parts.worksheet
-    parts.client.open_by_key.return_value = parts.spreadsheet
-    monkeypatch.setattr(consumer, "load_settings", lambda: SETTINGS)
-    monkeypatch.setattr(consumer, "get_credentials", parts.credentials)
-    monkeypatch.setattr(consumer.gspread, "authorize", Mock(return_value=parts.client))
-    monkeypatch.setattr(consumer, "publish_failure", parts.failure)
-    monkeypatch.setattr(consumer, "publish_reference_if_changed", parts.publish)
-    monkeypatch.setattr(consumer, "checkpoint_completed_reference", parts.checkpoint)
-    return parts
-
-
-def test_handler_reads_the_configured_worksheet_and_publishes_changed_snapshot(sheet):
+def test_handler_reads_the_configured_worksheet_and_publishes_changed_snapshot(
+    reference_sheet,
+):
     bus = object()
     request = make_request()
 
     consumer.handle_request(request, bus)
 
-    sheet.client.open_by_key.assert_called_once_with("SHEET123")
-    sheet.spreadsheet.worksheet.assert_called_once_with("1. Для заливки")
-    sheet.credentials.assert_called_once_with("credentials.json", "token.json", SCOPES)
-    published = sheet.publish.call_args.args
+    reference_sheet.client.open_by_key.assert_called_once_with("SHEET123")
+    reference_sheet.spreadsheet.worksheet.assert_called_once_with("1. Для заливки")
+    reference_sheet.credentials.assert_called_once_with(
+        "credentials.json", "token.json", SCOPES
+    )
+    published = reference_sheet.publish.call_args.args
     assert published[:2] == (bus, request)
     assert "НС-1".encode("utf-8") in published[2]
-    sheet.failure.assert_not_called()
+    reference_sheet.failure.assert_not_called()
 
 
-def test_handler_uses_service_account_when_configured(sheet, monkeypatch):
+def test_handler_uses_service_account_when_configured(reference_sheet, monkeypatch):
     service_account_settings = SimpleNamespace(
         **{
             **vars(SETTINGS),
@@ -91,11 +64,11 @@ def test_handler_uses_service_account_when_configured(sheet, monkeypatch):
     service_credentials.assert_called_once_with(
         "/credentials/service_account_secret.json", SCOPES
     )
-    sheet.credentials.assert_not_called()
+    reference_sheet.credentials.assert_not_called()
 
 
 def test_service_account_permission_denial_retries_with_cached_user_oauth(
-    sheet, monkeypatch, tmp_path
+    reference_sheet, monkeypatch, tmp_path
 ):
     user_credentials_file = tmp_path / "client_secret.json"
     user_credentials_file.write_text("{}", encoding="utf-8")
@@ -114,7 +87,7 @@ def test_service_account_permission_denial_retries_with_cached_user_oauth(
     service_client.open_by_key.side_effect = PermissionError
     service_credentials = Mock(return_value="service credentials")
     user_credentials = Mock(return_value="user credentials")
-    authorize = Mock(side_effect=[service_client, sheet.client])
+    authorize = Mock(side_effect=[service_client, reference_sheet.client])
     monkeypatch.setattr(consumer, "load_settings", lambda: service_account_settings)
     monkeypatch.setattr(
         consumer, "get_service_account_credentials", service_credentials
@@ -133,62 +106,75 @@ def test_service_account_permission_denial_retries_with_cached_user_oauth(
         call(service_credentials.return_value),
         call(user_credentials.return_value),
     ]
-    assert sheet.publish.called
-    sheet.failure.assert_not_called()
+    assert reference_sheet.publish.called
+    reference_sheet.failure.assert_not_called()
 
 
-def test_google_failure_is_published_as_a_failure_event(sheet):
-    sheet.worksheet.get_all_values.side_effect = RuntimeError("quota exceeded")
+def test_google_failure_is_published_as_a_failure_event(reference_sheet):
+    reference_sheet.worksheet.get_all_values.side_effect = RuntimeError(
+        "quota exceeded"
+    )
     bus = object()
     request = make_request()
 
     consumer.handle_request(request, bus)
 
-    sheet.failure.assert_called_once()
-    assert str(sheet.failure.call_args.args[2]) == "quota exceeded"
-    sheet.publish.assert_not_called()
+    reference_sheet.failure.assert_called_once()
+    assert str(reference_sheet.failure.call_args.args[2]) == "quota exceeded"
+    reference_sheet.publish.assert_not_called()
 
 
-def test_transient_google_timeout_is_reported_and_left_for_retry(sheet):
-    sheet.worksheet.get_all_values.side_effect = requests.Timeout("Google timed out")
+def test_transient_google_timeout_is_reported_and_left_for_retry(reference_sheet):
+    reference_sheet.worksheet.get_all_values.side_effect = requests.Timeout(
+        "Google timed out"
+    )
 
     with pytest.raises(RetryableMessageError, match="Transient failure"):
         consumer.handle_request(make_request(), object())
 
-    sheet.failure.assert_called_once()
-    sheet.publish.assert_not_called()
+    reference_sheet.failure.assert_called_once()
+    reference_sheet.publish.assert_not_called()
 
 
-def test_authentication_failure_is_published_as_a_failure_event(sheet):
+def test_authentication_failure_is_published_as_a_failure_event(reference_sheet):
     error = ReferenceAuthenticationError("Google OAuth authorization failed")
-    sheet.credentials.side_effect = error
+    reference_sheet.credentials.side_effect = error
     bus = object()
     request = make_request()
 
     consumer.handle_request(request, bus)
 
-    sheet.failure.assert_called_once()
-    assert str(sheet.failure.call_args.args[2]) == "Google OAuth authorization failed"
+    reference_sheet.failure.assert_called_once()
+    assert (
+        str(reference_sheet.failure.call_args.args[2])
+        == "Google OAuth authorization failed"
+    )
 
 
-def test_invalid_spreadsheet_url_is_returned_as_an_error_reply(sheet, monkeypatch):
-    broken = SimpleNamespace(**{**vars(SETTINGS), "spreadsheet_url": "not a sheet url"})
+def test_invalid_spreadsheet_url_is_returned_as_an_error_reply(
+    reference_sheet, monkeypatch
+):
+    broken = SimpleNamespace(
+        **{**vars(SETTINGS), "spreadsheet_url": "not a reference_sheet url"}
+    )
     monkeypatch.setattr(consumer, "load_settings", lambda: broken)
 
     consumer.handle_request(make_request(), object())
 
-    assert "spreadsheet ID" in str(sheet.failure.call_args.args[2])
-    sheet.credentials.assert_not_called()
+    assert "spreadsheet ID" in str(reference_sheet.failure.call_args.args[2])
+    reference_sheet.credentials.assert_not_called()
 
 
-def test_unexpected_command_is_reported_without_google_access(sheet):
+def test_unexpected_command_is_reported_without_google_access(reference_sheet):
     request = Envelope.create("unsupported", {}, correlation_id="bad-ref-event")
 
     consumer.handle_request(request, object())
 
-    assert "Unsupported reference command" in str(sheet.failure.call_args.args[2])
-    assert sheet.failure.call_args.args[3] == "bad-ref-event"
-    sheet.credentials.assert_not_called()
+    assert "Unsupported reference command" in str(
+        reference_sheet.failure.call_args.args[2]
+    )
+    assert reference_sheet.failure.call_args.args[3] == "bad-ref-event"
+    reference_sheet.credentials.assert_not_called()
 
 
 def test_main_runs_the_reference_downloader_worker(monkeypatch):
@@ -261,7 +247,7 @@ def test_checkpoint_persists_the_digest_after_pipeline_completion():
 
 
 def test_pipeline_completion_is_checkpointed_without_loading_google_credentials(
-    sheet,
+    reference_sheet,
 ):
     bus = object()
     completion = Envelope.create(
@@ -272,9 +258,9 @@ def test_pipeline_completion_is_checkpointed_without_loading_google_credentials(
 
     consumer.handle_request(completion, bus)
 
-    sheet.checkpoint.assert_called_once_with(bus, completion)
-    sheet.credentials.assert_not_called()
-    sheet.publish.assert_not_called()
+    reference_sheet.checkpoint.assert_called_once_with(bus, completion)
+    reference_sheet.credentials.assert_not_called()
+    reference_sheet.publish.assert_not_called()
 
 
 def test_auth_cli_runs_the_oauth_flow_once_for_the_configured_files(monkeypatch):

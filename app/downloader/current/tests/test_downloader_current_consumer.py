@@ -8,11 +8,7 @@ from app.contracts.models import Envelope
 from app.downloader.current import consumer
 from app.downloader.current.models import DownloadedCsv
 
-
-@pytest.fixture(autouse=True)
-def bypass_rate_limit_setup(monkeypatch):
-    """Keep consumer contract tests independent of Kafka infrastructure."""
-    monkeypatch.setattr(consumer, "rate_limit_session", lambda session, *_: session)
+pytestmark = pytest.mark.usefixtures("current_bypass_rate_limit")
 
 
 def test_reference_completion_triggers_and_publishes_current_csv(monkeypatch):

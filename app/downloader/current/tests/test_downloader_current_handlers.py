@@ -13,11 +13,7 @@ from app.messaging.payloads import decode_bytes
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
 
-
-@pytest.fixture(autouse=True)
-def bypass_rate_limit_setup(monkeypatch):
-    """Keep handler tests independent of Kafka infrastructure."""
-    monkeypatch.setattr(consumer, "rate_limit_session", lambda session, *_: session)
+pytestmark = pytest.mark.usefixtures("current_bypass_rate_limit")
 
 
 def make_request():
@@ -28,58 +24,32 @@ def make_request():
     )
 
 
-@pytest.fixture
-def steps(monkeypatch):
-    """Mock each CMS step so a test can break exactly one of them."""
-    parts = SimpleNamespace(
-        failure=Mock(),
-        publish=Mock(),
-        delete=Mock(),
-        export=Mock(),
-        download=Mock(
-            return_value=DownloadedCsv(
-                cron_num=5,
-                filename="current.csv",
-                content=b"current csv",
-                archive_filename="archive.zip",
-            )
-        ),
-    )
-    monkeypatch.setattr(consumer, "load_settings", lambda: "settings")
-    monkeypatch.setattr(consumer, "request_session", Mock(return_value="session"))
-    monkeypatch.setattr(consumer, "get_latest_export_cron_num", Mock(return_value=4))
-    monkeypatch.setattr(consumer, "start_product_export", parts.export)
-    monkeypatch.setattr(consumer, "download_latest_export_content", parts.download)
-    monkeypatch.setattr(consumer, "delete_archive_from_admin", parts.delete)
-    monkeypatch.setattr(consumer, "publish_current_snapshot", parts.publish)
-    monkeypatch.setattr(consumer, "publish_failure", parts.failure)
-    return parts
-
-
-def test_download_failure_is_reported_and_stops_processing(steps):
-    steps.download.side_effect = RuntimeError("export never finished")
+def test_download_failure_is_reported_and_stops_processing(current_steps):
+    current_steps.download.side_effect = RuntimeError("export never finished")
     bus = object()
     request = make_request()
 
     consumer.handle_request(request, bus)
 
-    steps.failure.assert_called_once()
-    assert str(steps.failure.call_args.args[2]) == "export never finished"
-    steps.publish.assert_not_called()
-    steps.delete.assert_not_called()
+    current_steps.failure.assert_called_once()
+    assert str(current_steps.failure.call_args.args[2]) == "export never finished"
+    current_steps.publish.assert_not_called()
+    current_steps.delete.assert_not_called()
 
 
-def test_transient_cms_network_failure_is_reported_and_left_for_retry(steps):
-    steps.download.side_effect = requests.ConnectionError("CMS unavailable")
+def test_transient_cms_network_failure_is_reported_and_left_for_retry(current_steps):
+    current_steps.download.side_effect = requests.ConnectionError("CMS unavailable")
 
     with pytest.raises(RetryableMessageError, match="Transient failure"):
         consumer.handle_request(make_request(), object())
 
-    steps.failure.assert_called_once()
-    steps.publish.assert_not_called()
+    current_steps.failure.assert_called_once()
+    current_steps.publish.assert_not_called()
 
 
-def test_a_failure_before_the_export_starts_is_also_reported(steps, monkeypatch):
+def test_a_failure_before_the_export_starts_is_also_reported(
+    current_steps, monkeypatch
+):
     def broken_settings():
         raise ValueError("Missing required environment setting(s): TAPTOP_ACCESS")
 
@@ -87,20 +57,20 @@ def test_a_failure_before_the_export_starts_is_also_reported(steps, monkeypatch)
 
     consumer.handle_request(make_request(), object())
 
-    assert "TAPTOP_ACCESS" in str(steps.failure.call_args.args[2])
-    steps.export.assert_not_called()
+    assert "TAPTOP_ACCESS" in str(current_steps.failure.call_args.args[2])
+    current_steps.export.assert_not_called()
 
 
-def test_unexpected_event_command_is_reported_without_contacting_cms(steps):
+def test_unexpected_event_command_is_reported_without_contacting_cms(current_steps):
     message = Envelope.create("unrecognized", {}, correlation_id="pipeline-bad-command")
 
     consumer.handle_request(message, object())
 
     assert "Unsupported current downloader command" in str(
-        steps.failure.call_args.args[2]
+        current_steps.failure.call_args.args[2]
     )
-    assert steps.failure.call_args.args[3] == "pipeline-bad-command"
-    steps.export.assert_not_called()
+    assert current_steps.failure.call_args.args[3] == "pipeline-bad-command"
+    current_steps.export.assert_not_called()
 
 
 def test_main_subscribes_to_reference_changes(monkeypatch):

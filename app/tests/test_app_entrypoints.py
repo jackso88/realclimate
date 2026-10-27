@@ -5,7 +5,6 @@ the long-running parts replaced by mocks, to prove that the entry point is
 wired to the right topic, consumer group and heartbeat name.
 """
 
-import logging
 import runpy
 import warnings
 from types import SimpleNamespace
@@ -21,6 +20,8 @@ from app.messaging.topics import (
     REFERENCE_DOWNLOADS,
     REFERENCE_SYNC_REQUESTS,
 )
+
+pytestmark = pytest.mark.usefixtures("quiet_logging")
 
 CONSUMER_ENTRYPOINTS = [
     (
@@ -62,12 +63,6 @@ def run_as_main(module_name):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         runpy.run_module(module_name, run_name="__main__")
-
-
-@pytest.fixture(autouse=True)
-def quiet_logging(monkeypatch):
-    monkeypatch.setattr(logging, "basicConfig", Mock())
-    monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
 
 @pytest.mark.parametrize(

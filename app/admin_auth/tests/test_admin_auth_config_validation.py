@@ -5,43 +5,13 @@ import pytest
 from app.admin_auth.config import load_settings
 from app.admin_auth.exceptions import AdminLoginError
 from app.admin_auth.models import AdminSettings
+from app.admin_auth.tests.fixtures.fixtures_config import REQUIRED
 
-REQUIRED = {
-    "TAPTOP_BASE_URL": "https://admin.invalid/",
-    "TAPTOP_CMS_URL": "https://admin.invalid/cms/",
-    "TAPTOP_USERNAME": "test-user",
-    "TAPTOP_PASSWORD": "test-password",
-    "TAPTOP_ACCESS": "test-access",
-    "TAPTOP_VER_ID": "123",
-    "TAPTOP_DESIGN_ID": "456",
-}
-OPTIONAL = (
-    "ADMIN_AUTH_SESSION_CACHE_TTL_SECONDS",
-    "TAPTOP_LOGIN_PATH",
-    "TAPTOP_MOSAIC_PATH",
-    "TAPTOP_FORM_NAME",
-    "TAPTOP_USERNAME_FIELD",
-    "TAPTOP_PASSWORD_FIELD",
-)
-MISSING_FILE = "/path/that/does/not/exist"
+pytestmark = pytest.mark.usefixtures("admin_isolated_environment")
 
 
-@pytest.fixture(autouse=True)
-def isolated_environment(monkeypatch):
-    """Start from a clean slate and make sure nothing leaks out of a test."""
-    for name in (*REQUIRED, *OPTIONAL):
-        monkeypatch.setenv(name, "placeholder")
-        monkeypatch.delenv(name)
-
-
-@pytest.fixture
-def auth_environment(monkeypatch):
-    for name, value in REQUIRED.items():
-        monkeypatch.setenv(name, value)
-
-
-def test_defaults_are_applied_to_the_optional_settings(auth_environment):
-    settings = load_settings(env_file=MISSING_FILE)
+def test_defaults_are_applied_to_the_optional_settings(admin_valid_environment):
+    settings = load_settings()
 
     assert settings == AdminSettings(
         base_url="https://admin.invalid",
@@ -60,21 +30,21 @@ def test_defaults_are_applied_to_the_optional_settings(auth_environment):
     )
 
 
-def test_trailing_slashes_are_stripped_from_both_urls(auth_environment):
-    settings = load_settings(env_file=MISSING_FILE)
+def test_trailing_slashes_are_stripped_from_both_urls(admin_valid_environment):
+    settings = load_settings()
 
     assert not settings.base_url.endswith("/")
     assert not settings.cms_url.endswith("/")
 
 
-def test_login_form_details_can_be_overridden(auth_environment, monkeypatch):
+def test_login_form_details_can_be_overridden(admin_valid_environment, monkeypatch):
     monkeypatch.setenv("TAPTOP_LOGIN_PATH", "/sign-in")
     monkeypatch.setenv("TAPTOP_MOSAIC_PATH", "/panel")
     monkeypatch.setenv("TAPTOP_FORM_NAME", "custom_form")
     monkeypatch.setenv("TAPTOP_USERNAME_FIELD", "login")
     monkeypatch.setenv("TAPTOP_PASSWORD_FIELD", "pass")
 
-    settings = load_settings(env_file=MISSING_FILE)
+    settings = load_settings()
 
     assert settings.login_path == "/sign-in"
     assert settings.mosaic_path == "/panel"
@@ -84,24 +54,28 @@ def test_login_form_details_can_be_overridden(auth_environment, monkeypatch):
 
 
 @pytest.mark.parametrize("missing", sorted(REQUIRED))
-def test_each_required_setting_is_enforced(auth_environment, monkeypatch, missing):
+def test_each_required_setting_is_enforced(
+    admin_valid_environment, monkeypatch, missing
+):
     monkeypatch.delenv(missing)
 
     with pytest.raises(AdminLoginError, match=missing):
-        load_settings(env_file=MISSING_FILE)
+        load_settings()
 
 
 def test_every_missing_setting_is_listed_in_one_error():
     with pytest.raises(AdminLoginError) as error:
-        load_settings(env_file=MISSING_FILE)
+        load_settings()
 
     for name in REQUIRED:
         assert name in str(error.value)
 
 
 @pytest.mark.parametrize("name", ["TAPTOP_VER_ID", "TAPTOP_DESIGN_ID"])
-def test_numeric_identifiers_must_be_integers(auth_environment, monkeypatch, name):
+def test_numeric_identifiers_must_be_integers(
+    admin_valid_environment, monkeypatch, name
+):
     monkeypatch.setenv(name, "twelve")
 
     with pytest.raises(AdminLoginError, match="must be integers"):
-        load_settings(env_file=MISSING_FILE)
+        load_settings()

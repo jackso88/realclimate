@@ -2,7 +2,6 @@
 
 import importlib
 import logging
-from unittest.mock import Mock
 
 import pytest
 
@@ -18,14 +17,6 @@ CONFIG_MODULES = [
 ]
 EXPECTED_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 EXPECTED_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
-@pytest.fixture
-def basic_config(monkeypatch):
-    """Intercept logging.basicConfig so tests never reconfigure real logging."""
-    mock = Mock()
-    monkeypatch.setattr(logging, "basicConfig", mock)
-    return mock
 
 
 @pytest.mark.parametrize("module_name", CONFIG_MODULES)

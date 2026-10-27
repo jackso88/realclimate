@@ -10,15 +10,6 @@ from app.downloader.reference.exceptions import ReferenceAuthenticationError
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
-@pytest.fixture
-def files(tmp_path):
-    credentials_file = tmp_path / "credentials.json"
-    credentials_file.write_text("{}", encoding="utf-8")
-    token_file = tmp_path / "token.json"
-    token_file.write_text("{}", encoding="utf-8")
-    return credentials_file, token_file
-
-
 def install_flow(monkeypatch, flow):
     monkeypatch.setattr(
         google_oauth.InstalledAppFlow,
@@ -36,8 +27,10 @@ def install_cached_token(monkeypatch, cached):
     monkeypatch.setattr(google_oauth, "Request", Mock())
 
 
-def test_failed_refresh_falls_back_to_the_interactive_flow(monkeypatch, files):
-    credentials_file, token_file = files
+def test_failed_refresh_falls_back_to_the_interactive_flow(
+    monkeypatch, reference_oauth_files
+):
+    credentials_file, token_file = reference_oauth_files
     expired = Mock(valid=False, expired=True, refresh_token="refresh")
     expired.refresh.side_effect = RuntimeError("token revoked")
     fresh = Mock()
@@ -60,9 +53,9 @@ def test_failed_refresh_falls_back_to_the_interactive_flow(monkeypatch, files):
 
 
 def test_expired_token_without_a_refresh_token_needs_a_new_authorization(
-    monkeypatch, files
+    monkeypatch, reference_oauth_files
 ):
-    credentials_file, token_file = files
+    credentials_file, token_file = reference_oauth_files
     expired = Mock(valid=False, expired=True, refresh_token=None)
     fresh = Mock()
     fresh.to_json.return_value = "{}"
@@ -77,8 +70,10 @@ def test_expired_token_without_a_refresh_token_needs_a_new_authorization(
     expired.refresh.assert_not_called()
 
 
-def test_a_failed_authorization_is_wrapped_and_keeps_its_cause(monkeypatch, files):
-    credentials_file, token_file = files
+def test_a_failed_authorization_is_wrapped_and_keeps_its_cause(
+    monkeypatch, reference_oauth_files
+):
+    credentials_file, token_file = reference_oauth_files
     token_file.unlink()
     flow = Mock()
     flow.run_local_server.side_effect = OSError("address already in use")
