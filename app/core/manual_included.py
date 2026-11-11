@@ -1,0 +1,1 @@
+MANUAL_INCLUDED = ("НС-1688267",)

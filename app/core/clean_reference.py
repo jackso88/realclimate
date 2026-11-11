@@ -15,6 +15,7 @@ from app.core.utils import (
     parse_price,
     price_exclusion_reason,
 )
+from app.core.manual_included import MANUAL_INCLUDED
 
 
 def _drop_duplicate_models(
@@ -128,7 +129,7 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
             if folder is None:
                 reason = REASON_UNRESOLVED_GROUP
 
-        if reason is not None:
+        if reason is not None and code not in MANUAL_INCLUDED:
             excluded.append(
                 ExcludedRecord(
                     code=code,
