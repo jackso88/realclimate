@@ -5,6 +5,7 @@ from app.core import consumer
 from app.core.models import CorePipelineOutput, CoreSettings
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
+    CORE_ABSENT_ARTICLES_STATE,
     CORE_DUPLICATE_MAP_STATE,
     CORE_NOTIFICATIONS,
     CORE_PROCESS_RESULTS,
@@ -15,12 +16,15 @@ from app.messaging.topics import (
 
 
 class FakeBus:
-    def __init__(self, state=None):
+    def __init__(self, state=None, absent_state=None):
         self.state = state
+        self.absent_state = absent_state
         self.published = []
 
     def read_latest(self, topic):
-        assert topic == CORE_DUPLICATE_MAP_STATE
+        assert topic in (CORE_DUPLICATE_MAP_STATE, CORE_ABSENT_ARTICLES_STATE)
+        if topic == CORE_ABSENT_ARTICLES_STATE:
+            return self.absent_state
         return self.state
 
     def publish(self, topic, message, key=None):
@@ -107,7 +111,7 @@ def test_core_waits_for_both_correlated_events_and_processes_them(
     monkeypatch.setattr(
         consumer,
         "process_catalogue",
-        lambda reference, current, duplicate_map: (
+        lambda reference, current, duplicate_map, absent_articles: (
             received.append((reference, current, duplicate_map))
             or make_output(["Added"])
         ),
@@ -141,7 +145,9 @@ def test_core_processes_inputs_when_current_arrives_first(monkeypatch, tmp_path)
     monkeypatch.setattr(
         consumer,
         "process_catalogue",
-        lambda reference, current, mapping: processed.append((reference, current))
+        lambda reference, current, mapping, absent: processed.append(
+            (reference, current)
+        )
         or make_output(),
     )
     monkeypatch.setattr(consumer, "encode_duplicate_map", lambda _: {"entries": []})
