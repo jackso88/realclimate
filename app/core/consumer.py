@@ -11,7 +11,9 @@ from app.core.models import CoreSettings
 from app.core.pending_inputs import RedisPendingInputsStore
 from app.core.redis_client import RedisClient, RedisCommandError
 from app.core.pipeline import (
+    decode_absent_articles,
     decode_duplicate_map,
+    encode_absent_articles,
     encode_duplicate_map,
     process_catalogue,
 )
@@ -19,6 +21,7 @@ from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
+    CORE_ABSENT_ARTICLES_STATE,
     CORE_DUPLICATE_MAP_STATE,
     CORE_NOTIFICATIONS,
     CORE_PROCESS_RESULTS,
@@ -105,7 +108,13 @@ def handle_process(
             if latest_state
             else dict(DUPLICATE_CODE_MAP)
         )
-        output = process_catalogue(reference_csv, current_csv, duplicate_map)
+        latest_absent = bus.read_latest(CORE_ABSENT_ARTICLES_STATE)
+        absent_articles = (
+            decode_absent_articles(latest_absent.payload) if latest_absent else set()
+        )
+        output = process_catalogue(
+            reference_csv, current_csv, duplicate_map, absent_articles
+        )
 
         excluded_path = settings.excluded_csv_path
         excluded_path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +126,14 @@ def handle_process(
                 encode_duplicate_map(output.updated_duplicate_map),
             ),
             key="duplicate-map",
+        )
+        bus.publish(
+            CORE_ABSENT_ARTICLES_STATE,
+            Envelope.create(
+                "absent_articles_state",
+                encode_absent_articles(output.updated_absent_articles),
+            ),
+            key="absent-articles",
         )
 
         changes = output.detailed_changes
