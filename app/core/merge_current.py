@@ -11,6 +11,10 @@ Column mapping (see docstrings below for the exact rules):
     - an article whose row was dropped by the cleaning pipeline this
       run (bad price, excluded category, unresolved group, duplicate
       model, ...) -> removed from current.csv entirely;
+    - an article missing from the supplier catalogue altogether (not
+      matched to anything and not dropped by cleaning) -> kept but
+      hidden (``hidden = 1``) and remembered in ``absent_articles``;
+      when it returns to the catalogue it is un-hidden again;
     - a genuinely new article -> a brand-new row is built from the
       field mapping given by the client (see ``build_new_row``).
 """
@@ -42,6 +46,10 @@ NEW_ROW_HIDDEN = "0"
 NEW_ROW_SEO_NOINDEX = "0"
 NEW_ROW_SMT_TYPE = "0"
 SEF_URL_PREFIX = "glavnaya-magazina/product"
+
+# Reason named in the report when a row is hidden because the supplier
+# catalogue no longer lists it.
+ABSENT_HIDE_REASON = "отсутствия в каталоге поставщика"
 
 
 def column_short_key(header_cell: str) -> str:
@@ -342,12 +350,59 @@ def _build_removal_reasons(
     return reasons
 
 
+def _hide_missing_row(row: dict[str, str], hidden_header: str) -> bool:
+    """Hide a row whose article is no longer in the supplier catalogue.
+
+    Args:
+        row: The current.csv row, mutated in place.
+        hidden_header: Header cell of the "hidden" column.
+
+    Returns:
+        ``True`` if the row was visible and is now hidden; ``False`` if it
+        was already hidden (for any reason) and was left as it is.
+    """
+    if (row.get(hidden_header) or "").strip() == "1":
+        return False
+    row[hidden_header] = "1"
+    return True
+
+
+def _restore_reappeared_row(
+    row: dict[str, str], record: ProductRecord, hidden_header: str
+) -> tuple[bool, bool]:
+    """Un-hide a row whose article is back in the supplier catalogue.
+
+    Only meant for articles that an earlier run hid because they were
+    missing. A zero price keeps the row hidden: that is the price rule's
+    decision, not the absence rule's.
+
+    Args:
+        row: The current.csv row, mutated in place.
+        record: The cleaned record that matches this row.
+        hidden_header: Header cell of the "hidden" column.
+
+    Returns:
+        ``(announce, keep_tracking)``. ``announce`` is ``True`` when the
+        row was still hidden, so the return must be reported.
+        ``keep_tracking`` is ``True`` only when this call cleared the
+        flag: the article stays tracked until a later export shows it
+        visible, so a failed upload is retried instead of forgotten.
+    """
+    if (row.get(hidden_header) or "").strip() != "1":
+        return False, False
+    if record.retail_price == 0:
+        return True, False
+    row[hidden_header] = "0"
+    return True, True
+
+
 def merge_records_into_current(
     records: list[ProductRecord],
     header: list[str],
     current_rows: list[dict[str, str]],
     duplicate_map: DuplicateMap,
     excluded: Optional[list[ExcludedRecord]] = None,
+    absent_articles: Optional[set[str]] = None,
 ) -> MergeResult:
     """Merge cleaned catalogue records into current.csv's existing rows.
 
@@ -363,8 +418,10 @@ def merge_records_into_current(
            anything else -> treat this as the same physical product
            having been renamed; rewrite the row's article (and
            refresh amount/price).
-        4. Otherwise -> left untouched (presumably discontinued, or
-           an ambiguous rename we won't guess at).
+        4. Otherwise -> the product has disappeared from the supplier
+           catalogue. A visible row is hidden (``hidden = 1``) and its
+           article is remembered; a row that is already hidden, or an
+           ambiguous rename, is left as-is.
     Every kept record not claimed by an update or a rename is then
     appended as a brand-new row.
 
@@ -381,6 +438,9 @@ def merge_records_into_current(
             price, excluded category, unresolved group, duplicate
             model, ...). If any of them already has a row in
             current.csv, that row is removed. Defaults to none.
+        absent_articles: Articles hidden by an earlier run because the
+            supplier catalogue no longer listed them. Such an article is
+            un-hidden when it reappears. Defaults to none.
 
     Returns:
         A ``MergeResult`` with the final row set and a breakdown of
@@ -392,6 +452,12 @@ def merge_records_into_current(
     records_by_code: dict[str, ProductRecord] = {r.code: r for r in records}
     removal_reason_by_article = _build_removal_reasons(excluded or [], duplicate_map)
     claimed_codes: set[str] = set()
+    hidden_header = header_by_short_key.get("hidden")
+    previously_absent = set(absent_articles or ())
+    tracked_absent: set[str] = set()
+    # An empty supplier catalogue means a failed download, not a catalogue
+    # in which every product vanished: hide nothing in that case.
+    hide_missing = bool(records) and hidden_header is not None
 
     existing_sef_urls = {
         row.get(header_by_short_key.get("sef_url", ""), "") for row in current_rows
@@ -433,6 +499,25 @@ def merge_records_into_current(
             old_hidden, new_hidden = hidden_change
             result.hidden_changes.append((article, old_hidden, new_hidden))
 
+    def _handle_reappeared(
+        was_absent: bool, code: str, row: dict[str, str], record: ProductRecord
+    ) -> None:
+        """Un-hide a returning article and update the tracking state.
+
+        Args:
+            was_absent: Whether an earlier run hid this article for absence.
+            code: Article code under which the return is reported.
+            row: The current.csv row, mutated in place.
+            record: The cleaned record that matches this row.
+        """
+        if not was_absent or hidden_header is None:
+            return
+        announce, keep_tracking = _restore_reappeared_row(row, record, hidden_header)
+        if announce:
+            result.reappeared_articles.append(code)
+        if keep_tracking:
+            tracked_absent.add(code)
+
     # --- single pass over every existing row -----------------------
     for row in current_rows:
         article = row[article_header]
@@ -444,6 +529,7 @@ def merge_records_into_current(
                 row, record, header_by_short_key
             )
             _record_changes(article, price_change, amount_change, hidden_change)
+            _handle_reappeared(article in previously_absent, article, row, record)
             claimed_codes.add(article)
             result.updated_articles.append(article)
             result.rows.append(row)
@@ -477,13 +563,26 @@ def merge_records_into_current(
             # Report changes under the NEW code — that's what this
             # article is called from now on.
             _record_changes(new_record.code, price_change, amount_change, hidden_change)
+            _handle_reappeared(
+                article in previously_absent, new_record.code, row, new_record
+            )
             claimed_codes.add(new_record.code)
             result.renamed_articles.append((article, new_record.code))
             result.rows.append(row)
         else:
-            # Case 4: zero matches (or a real ambiguity with more than
-            # one) -> nothing to safely change; leave the row as-is.
-            result.untouched_articles.append(article)
+            # Case 4: no matching record. A visible row is hidden and
+            # remembered; an ambiguous rename, or a row that is already
+            # hidden for another reason, is left as-is.
+            newly_hidden = (
+                hide_missing and not matches and _hide_missing_row(row, hidden_header)
+            )
+            if newly_hidden:
+                tracked_absent.add(article)
+                result.hidden_absent_articles.append(article)
+            else:
+                if article in previously_absent:
+                    tracked_absent.add(article)
+                result.untouched_articles.append(article)
             result.rows.append(row)
 
     # --- anything left over is a brand-new article ------------------
@@ -495,6 +594,7 @@ def merge_records_into_current(
         result.added_articles.append(record.code)
         claimed_codes.add(record.code)
 
+    result.absent_articles = tracked_absent
     return result
 
 
@@ -516,6 +616,11 @@ def format_merge_report(result: MergeResult) -> list[str]:
         - removed article (its row was dropped by the cleaning
           pipeline this run): "Артикул {article} был исключен по
           причине {причина}"
+        - article missing from the supplier catalogue (hidden this run):
+          "Артикул {article} был скрыт по причине отсутствия в каталоге
+          поставщика"
+        - hidden article that is back in the supplier catalogue:
+          "Артикул {article} вновь появился в каталоге поставщика"
         - new articles: one combined line listing every added
           артикул: "Были добавлены новые артикулы: ..., ..., ..."
 
@@ -574,6 +679,12 @@ def format_merge_report(result: MergeResult) -> list[str]:
 
     for article, reason in result.removed_articles:
         lines.append(f"Артикул {article} был исключен по причине {reason}")
+
+    for article in result.hidden_absent_articles:
+        lines.append(f"Артикул {article} был скрыт по причине {ABSENT_HIDE_REASON}")
+
+    for article in result.reappeared_articles:
+        lines.append(f"Артикул {article} вновь появился в каталоге поставщика")
 
     if result.added_articles:
         lines.append(
