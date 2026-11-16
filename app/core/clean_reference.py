@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Optional
 
 from app.core.models import DuplicateMap, ExcludedRecord, ProcessResult, ProductRecord
 from app.core.utils import (
@@ -18,6 +18,25 @@ from app.core.utils import (
 from app.core.manual_included import MANUAL_INCLUDED
 
 
+def _storable_price(price: Optional[float]) -> float:
+    """Return a price that a kept ``ProductRecord`` can hold.
+
+    Only used for manually included rows, which are kept even when their
+    price is missing or invalid. ``ProductRecord`` requires a non-negative
+    number, so such a price becomes ``0.0``, the catalogue's "not for sale"
+    value: the merge step then hides the article (``hidden = 1``).
+
+    Args:
+        price: Parsed price; ``None`` when the source cell has no usable number.
+
+    Returns:
+        ``price`` when it is a non-negative number, otherwise ``0.0``.
+    """
+    if price is None or price < 0:
+        return 0.0
+    return price
+
+
 def _drop_duplicate_models(
     provisional: list[ProductRecord], excluded: list[ExcludedRecord]
 ) -> tuple[list[ProductRecord], list[ExcludedRecord]]:
@@ -30,6 +49,10 @@ def _drop_duplicate_models(
 
     Comparison is case-insensitive (whitespace-normalized, lower-
     cased), matching every other check in this pipeline.
+
+    Articles listed in ``MANUAL_INCLUDED`` are never dropped here: they
+    are kept whatever their model. Other rows that share their model are
+    still excluded.
 
     Args:
         provisional: Records that passed every other check (type,
@@ -51,7 +74,7 @@ def _drop_duplicate_models(
     kept: list[ProductRecord] = []
     for record in provisional:
         key = record.model.lower()
-        if model_counts[key] > 1:
+        if model_counts[key] > 1 and record.code not in MANUAL_INCLUDED:
             excluded.append(
                 ExcludedRecord(
                     code=record.code,
@@ -74,6 +97,12 @@ def _drop_duplicate_models(
 
 def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessResult:
     """Run the full cleaning pipeline over already-loaded sheet rows.
+
+    Articles listed in ``MANUAL_INCLUDED`` are kept whatever the reason
+    they would otherwise be excluded for (category, price, unresolved
+    group, duplicate model). Fields they cannot supply are filled with
+    safe values: a missing or invalid price becomes ``0.0`` (the article
+    is then hidden downstream) and an unresolved folder stays empty.
 
     Args:
         rows: Sheet rows (as returned by
@@ -123,13 +152,15 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
         if reason is None:
             reason = price_exclusion_reason(retail_price, dealer_price)
 
-        folder = None
-        if reason is None:
-            folder = map_category_to_folder(current_category)
-            if folder is None:
-                reason = REASON_UNRESOLVED_GROUP
+        # Resolved for every row, not only for rows without a reason: a
+        # manually included row skips the exclusion below and still needs
+        # its folder.
+        folder = map_category_to_folder(current_category)
+        if reason is None and folder is None:
+            reason = REASON_UNRESOLVED_GROUP
 
-        if reason is not None and code not in MANUAL_INCLUDED:
+        manually_included = code in MANUAL_INCLUDED
+        if reason is not None and not manually_included:
             excluded.append(
                 ExcludedRecord(
                     code=code,
@@ -146,6 +177,10 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
             )
             continue
 
+        if manually_included:
+            retail_price = _storable_price(retail_price)
+            dealer_price = _storable_price(dealer_price)
+
         provisional.append(
             ProductRecord(
                 code=code,
@@ -157,7 +192,7 @@ def process_rows(rows: Iterable[tuple], existing_map: DuplicateMap) -> ProcessRe
                 brand=brand,
                 type_=type_normalized,
                 category=current_category,
-                folder=folder,
+                folder=folder or "",
             )
         )
 
