@@ -416,9 +416,7 @@ def test_core_passes_absent_state_to_the_pipeline_and_republishes_it(
     assert key == "absent-articles"
 
 
-def test_core_starts_with_empty_absent_state_when_topic_is_empty(
-    monkeypatch, tmp_path
-):
+def test_core_starts_with_empty_absent_state_when_topic_is_empty(monkeypatch, tmp_path):
     received = []
     monkeypatch.setattr(
         consumer,
