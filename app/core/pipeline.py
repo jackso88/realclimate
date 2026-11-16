@@ -45,10 +45,37 @@ def decode_duplicate_map(payload: dict) -> DuplicateMap:
     }
 
 
+def encode_absent_articles(articles: set[str]) -> dict[str, list[str]]:
+    """Convert the set of absent articles to a JSON-safe Kafka payload.
+
+    Args:
+        articles: Articles hidden because the supplier catalogue no longer
+            lists them.
+
+    Returns:
+        A dictionary whose ``articles`` value is a sorted list, so the
+        published state is deterministic.
+    """
+    return {"articles": sorted(articles)}
+
+
+def decode_absent_articles(payload: dict) -> set[str]:
+    """Restore the set of absent articles from a Kafka payload.
+
+    Args:
+        payload: Dictionary produced by :func:`encode_absent_articles`.
+
+    Returns:
+        The set of tracked article codes; empty when the payload has none.
+    """
+    return {str(article) for article in payload.get("articles", [])}
+
+
 def process_catalogue(
     reference_csv: bytes,
     current_csv: bytes,
     duplicate_map: DuplicateMap | None = None,
+    absent_articles: set[str] | None = None,
 ) -> CorePipelineOutput:
     """Clean supplier rows, merge them into the current CMS export, and serialize.
 
@@ -57,10 +84,12 @@ def process_catalogue(
         current_csv: Current CMS catalogue serialized as CSV bytes.
         duplicate_map: Previous duplicate-code state; when ``None``, the
             bundled initial mapping is used.
+        absent_articles: Articles hidden by earlier runs because the
+            supplier catalogue no longer listed them; ``None`` means none.
 
     Returns:
         Processed catalogue bytes, excluded-row CSV bytes, change summaries,
-        and updated duplicate-code state.
+        and updated duplicate-code and absent-article state.
 
     Raises:
         SourceDataError: If the supplier CSV cannot be decoded or parsed.
@@ -78,10 +107,12 @@ def process_catalogue(
         current_rows,
         process_result.updated_map,
         excluded=process_result.excluded,
+        absent_articles=absent_articles,
     )
     return CorePipelineOutput(
         processed_csv=serialize_current_csv(merge_result.header, merge_result.rows),
         excluded_csv=serialize_excluded_csv(process_result.excluded),
         detailed_changes=format_merge_report(merge_result),
         updated_duplicate_map=process_result.updated_map,
+        updated_absent_articles=merge_result.absent_articles,
     )

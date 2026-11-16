@@ -127,6 +127,10 @@ services:
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --command-config /tmp/kafka-client.properties \
+          --create --if-not-exists --topic core.absent-articles.state \
+          --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --command-config /tmp/kafka-client.properties \
           --create --if-not-exists --topic reference.snapshot.state \
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
     volumes:

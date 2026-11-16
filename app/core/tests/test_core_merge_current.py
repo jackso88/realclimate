@@ -302,7 +302,8 @@ class TestMergeRecordsIntoCurrent:
         assert result.updated_articles == ["NC-KEEP"]
         assert result.renamed_articles == [("НС-1-D01", "НС-5555")]
         assert result.added_articles == ["NC-BRAND-NEW"]
-        assert result.untouched_articles == ["NC-GONE"]
+        assert result.untouched_articles == []
+        assert result.hidden_absent_articles == ["NC-GONE"]
         assert len(result.rows) == 4
 
 

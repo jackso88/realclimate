@@ -191,6 +191,13 @@ class MergeResult(BaseModel):
             0, back to ``"0"`` the first time it leaves 0). Rows
             whose price change doesn't touch zero in either direction
             keep whatever "hidden" value they already had.
+        hidden_absent_articles: Articles hidden by this run because the
+            supplier catalogue no longer lists them.
+        reappeared_articles: Articles hidden by an earlier run for that
+            reason that are back in the supplier catalogue; their
+            "hidden" flag is cleared unless their price is 0.
+        absent_articles: Articles currently tracked as hidden because of
+            their absence. Persist this set and pass it to the next run.
     """
 
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
@@ -208,6 +215,9 @@ class MergeResult(BaseModel):
     amount_changes: list[tuple[str, float, float]] = Field(default_factory=list)
     anomalous_price_articles: list[str] = Field(default_factory=list)
     hidden_changes: list[tuple[str, str, str]] = Field(default_factory=list)
+    hidden_absent_articles: list[str] = Field(default_factory=list)
+    reappeared_articles: list[str] = Field(default_factory=list)
+    absent_articles: set[str] = Field(default_factory=set)
 
 
 class CorePipelineOutput(BaseModel):
@@ -218,6 +228,8 @@ class CorePipelineOutput(BaseModel):
         excluded_csv: Manual-review CSV bytes persisted by the core worker.
         detailed_changes: Human-readable descriptions of catalogue changes.
         updated_duplicate_map: Duplicate mapping state for the next run.
+        updated_absent_articles: Articles hidden for absence from the
+            supplier catalogue, to be passed to the next run.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -226,6 +238,7 @@ class CorePipelineOutput(BaseModel):
     excluded_csv: bytes
     detailed_changes: list[str]
     updated_duplicate_map: DuplicateMap
+    updated_absent_articles: set[str] = Field(default_factory=set)
 
 
 class CoreSettings(BaseModel):
