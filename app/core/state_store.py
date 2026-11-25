@@ -18,8 +18,7 @@ _INSERT_ALL = (
 _SELECT_ALL = "SELECT article FROM absent_articles"
 _SELECT_FLAG = "SELECT 1 FROM app_state WHERE key = %s"
 _INSERT_FLAG = (
-    "INSERT INTO app_state (key, value) VALUES (%s, %s) "
-    "ON CONFLICT (key) DO NOTHING"
+    "INSERT INTO app_state (key, value) VALUES (%s, %s) " "ON CONFLICT (key) DO NOTHING"
 )
 
 

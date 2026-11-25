@@ -436,9 +436,7 @@ def test_core_imports_the_legacy_kafka_state_once(monkeypatch, tmp_path):
     legacy = Envelope.create("absent_articles_state", {"articles": ["NC-1"]})
     store = FakeAbsentStore(legacy_done=False)
 
-    received, _ = run_core(
-        monkeypatch, tmp_path, FakeBus(absent_state=legacy), store
-    )
+    received, _ = run_core(monkeypatch, tmp_path, FakeBus(absent_state=legacy), store)
 
     assert store.imported == {"NC-1"}
     assert received == [{"NC-1"}]
@@ -458,9 +456,7 @@ def test_missing_legacy_topic_means_a_fresh_installation(monkeypatch, tmp_path):
     missing = KafkaException(KafkaError(KafkaError.UNKNOWN_TOPIC_OR_PART))
     store = FakeAbsentStore(legacy_done=False)
 
-    received, _ = run_core(
-        monkeypatch, tmp_path, FakeBus(absent_error=missing), store
-    )
+    received, _ = run_core(monkeypatch, tmp_path, FakeBus(absent_error=missing), store)
 
     assert store.imported == set()
     assert received == [set()]
