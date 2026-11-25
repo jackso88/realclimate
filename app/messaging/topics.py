@@ -7,9 +7,6 @@ REFERENCE_SNAPSHOT_STATE = "reference.snapshot.state"
 CURRENT_DOWNLOADS = "downloader.current.completed"
 CORE_PROCESS_RESULTS = "core.process.results"
 CORE_DUPLICATE_MAP_STATE = "core.duplicate-map.state"
-# Absent-article state now lives in PostgreSQL. This name is only read once, to
-# import the state left by earlier versions; the topic is no longer created.
-LEGACY_ABSENT_ARTICLES_STATE = "core.absent-articles.state"
 ADMIN_AUTH_REQUESTS = "admin-auth.requests"
 ADMIN_AUTH_CURRENT_RESPONSES = "admin-auth.current.responses"
 ADMIN_AUTH_UPLOADER_RESPONSES = "admin-auth.uploader.responses"

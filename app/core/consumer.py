@@ -25,13 +25,16 @@ from app.messaging.topics import (
     CORE_NOTIFICATIONS,
     CORE_PROCESS_RESULTS,
     CURRENT_DOWNLOADS,
-    LEGACY_ABSENT_ARTICLES_STATE,
     REFERENCE_DOWNLOADS,
     REFERENCE_PIPELINE_COMPLETED,
 )
 
 logger = logging.getLogger(__name__)
 CORE_INPUT_TOPICS = [REFERENCE_DOWNLOADS, CURRENT_DOWNLOADS]
+# Absent-article state lives in PostgreSQL now. This topic, written by earlier
+# versions, is read only once to import that state; it is deliberately not part
+# of the topic registry because the deployment no longer creates it.
+LEGACY_ABSENT_ARTICLES_STATE = "core.absent-articles.state"
 
 
 def read_legacy_absent_articles(bus) -> set[str]:
