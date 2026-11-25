@@ -14,6 +14,7 @@ from confluent_kafka import KafkaError, KafkaException
 
 from app.contracts.models import Envelope
 from app.core import consumer, pipeline
+from app.core.consumer import LEGACY_ABSENT_ARTICLES_STATE
 from app.core.merge_current import (
     format_merge_report,
     merge_records_into_current,
@@ -38,7 +39,6 @@ from app.core.tests.test_core_merge_current import (
     make_record,
 )
 from app.messaging.exceptions import RetryableMessageError
-from app.messaging.topics import LEGACY_ABSENT_ARTICLES_STATE
 
 ARTICLE = "article : Артикул"
 HIDDEN = "hidden : Скрыто"

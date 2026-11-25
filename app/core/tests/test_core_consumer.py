@@ -2,6 +2,7 @@
 
 from app.contracts.models import Envelope
 from app.core import consumer
+from app.core.consumer import LEGACY_ABSENT_ARTICLES_STATE
 from app.core.models import CorePipelineOutput, CoreSettings
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
@@ -9,7 +10,6 @@ from app.messaging.topics import (
     CORE_NOTIFICATIONS,
     CORE_PROCESS_RESULTS,
     CURRENT_DOWNLOADS,
-    LEGACY_ABSENT_ARTICLES_STATE,
     REFERENCE_DOWNLOADS,
     REFERENCE_PIPELINE_COMPLETED,
 )
