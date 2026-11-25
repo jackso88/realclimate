@@ -9,6 +9,8 @@ x-common-env: &common_env
   KAFKA_SSL_CA_LOCATION: /run/secrets/kafka/kafka-ca.pem
   TZ: Europe/Minsk
 
+x-database-url: &database_url postgresql://${POSTGRES_USER:-realclimate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-realclimate}
+
 x-kafka-ca-volume: &kafka_ca_volume kafka_client_certs:/run/secrets/kafka:ro
 
 x-cms-env: &cms_env
@@ -127,10 +129,6 @@ services:
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --command-config /tmp/kafka-client.properties \
-          --create --if-not-exists --topic core.absent-articles.state \
-          --partitions 1 --replication-factor 1 --config cleanup.policy=compact
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-          --command-config /tmp/kafka-client.properties \
           --create --if-not-exists --topic reference.snapshot.state \
           --partitions 1 --replication-factor 1 --config cleanup.policy=compact
     volumes:
@@ -215,6 +213,7 @@ services:
     command: ["python", "-m", "app.core.consumer"]
     environment:
       <<: *common_env
+      DATABASE_URL: *database_url
       EXCLUDED_CSV_PATH: /app/storage/outputs/for_zalivka_excluded.csv
       CORE_PENDING_REDIS_URL: redis://redis:6379/0
       CORE_PENDING_INPUT_TTL_SECONDS: ${CORE_PENDING_INPUT_TTL_SECONDS:-86400}
@@ -225,6 +224,7 @@ services:
     depends_on:
       kafka_init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
+      db_migrate: {condition: service_completed_successfully}
     restart: unless-stopped
 
   redis:
@@ -249,6 +249,33 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-realclimate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-realclimate}
+      TZ: Europe/Minsk
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  db_migrate:
+    container_name: db_migrate
+    build: *app_build
+    command: ["alembic", "-c", "db/alembic.ini", "upgrade", "head"]
+    environment:
+      DATABASE_URL: *database_url
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
 
   rate_limiter:
     container_name: rate_limiter
@@ -357,3 +384,4 @@ volumes:
   kafka_server_certs:
   kafka_client_certs:
   redis_data:
+  postgres_data:
