@@ -5,30 +5,58 @@ from app.core import consumer
 from app.core.models import CorePipelineOutput, CoreSettings
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
-    CORE_ABSENT_ARTICLES_STATE,
     CORE_DUPLICATE_MAP_STATE,
     CORE_NOTIFICATIONS,
     CORE_PROCESS_RESULTS,
     CURRENT_DOWNLOADS,
+    LEGACY_ABSENT_ARTICLES_STATE,
     REFERENCE_DOWNLOADS,
     REFERENCE_PIPELINE_COMPLETED,
 )
 
 
 class FakeBus:
-    def __init__(self, state=None, absent_state=None):
+    def __init__(self, state=None, absent_state=None, absent_error=None):
         self.state = state
         self.absent_state = absent_state
+        self.absent_error = absent_error
         self.published = []
 
     def read_latest(self, topic):
-        assert topic in (CORE_DUPLICATE_MAP_STATE, CORE_ABSENT_ARTICLES_STATE)
-        if topic == CORE_ABSENT_ARTICLES_STATE:
+        assert topic in (CORE_DUPLICATE_MAP_STATE, LEGACY_ABSENT_ARTICLES_STATE)
+        if topic == LEGACY_ABSENT_ARTICLES_STATE:
+            if self.absent_error is not None:
+                raise self.absent_error
             return self.absent_state
         return self.state
 
     def publish(self, topic, message, key=None):
         self.published.append((topic, message, key))
+
+
+class FakeAbsentStore:
+    """In-memory stand-in for the PostgreSQL absent-article store."""
+
+    def __init__(self, articles=None, legacy_done=True):
+        self.articles = set(articles or ())
+        self.legacy_done = legacy_done
+        self.imported = None
+        self.replaced = []
+
+    def legacy_import_done(self):
+        return self.legacy_done
+
+    def import_legacy(self, articles):
+        self.imported = set(articles)
+        self.articles = set(articles)
+        self.legacy_done = True
+
+    def load(self):
+        return set(self.articles)
+
+    def replace(self, articles):
+        self.articles = set(articles)
+        self.replaced.append(set(articles))
 
 
 class FakePendingInputs:
@@ -120,13 +148,14 @@ def test_core_waits_for_both_correlated_events_and_processes_them(
     settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
     bus = FakeBus()
     pending = FakePendingInputs()
+    store = FakeAbsentStore()
 
-    consumer.handle_process(make_reference(), bus, settings, pending)
+    consumer.handle_process(make_reference(), bus, settings, pending, store)
 
     assert received == []
     assert bus.published == []
 
-    consumer.handle_process(make_current(), bus, settings, pending)
+    consumer.handle_process(make_current(), bus, settings, pending, store)
 
     assert received == [(b"reference", b"current", consumer.DUPLICATE_CODE_MAP)]
     assert (tmp_path / "excluded.csv").read_bytes() == b"excluded"
@@ -154,10 +183,11 @@ def test_core_processes_inputs_when_current_arrives_first(monkeypatch, tmp_path)
     settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
     bus = FakeBus()
     pending = FakePendingInputs()
+    store = FakeAbsentStore()
 
-    consumer.handle_process(make_current(), bus, settings, pending)
+    consumer.handle_process(make_current(), bus, settings, pending, store)
     assert processed == []
-    consumer.handle_process(make_reference(), bus, settings, pending)
+    consumer.handle_process(make_reference(), bus, settings, pending, store)
 
     assert processed == [(b"reference", b"current")]
     assert pending.completed == ["pipeline-1"]
@@ -171,9 +201,10 @@ def test_core_skips_uploader_and_completes_reference_without_changes(
     settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
     bus = FakeBus()
     pending = FakePendingInputs()
+    store = FakeAbsentStore()
 
-    consumer.handle_process(make_reference(), bus, settings, pending)
-    consumer.handle_process(make_current(), bus, settings, pending)
+    consumer.handle_process(make_reference(), bus, settings, pending, store)
+    consumer.handle_process(make_current(), bus, settings, pending, store)
 
     assert all(topic != CORE_NOTIFICATIONS for topic, _, _ in bus.published)
     result = next(
@@ -199,7 +230,9 @@ def test_completed_duplicate_event_is_ignored(monkeypatch, tmp_path):
     pending = FakePendingInputs()
     pending.done.add("pipeline-1")
 
-    consumer.handle_process(make_reference(), FakeBus(), settings, pending)
+    consumer.handle_process(
+        make_reference(), FakeBus(), settings, pending, FakeAbsentStore()
+    )
 
     assert "pipeline-1" not in pending.parts
     assert pending.completed == []

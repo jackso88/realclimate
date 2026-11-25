@@ -247,6 +247,7 @@ class CoreSettings(BaseModel):
     Args:
         bootstrap_servers: Kafka broker addresses.
         excluded_csv_path: Path where the manual-review CSV is persisted.
+        database_url: PostgreSQL connection URL for persistent core state.
         pending_redis_url: Redis connection URL for incomplete CSV pairs.
         pending_input_ttl_seconds: Expiration for pairs missing one downloader.
         processing_claim_ttl_seconds: Recovery lease for an interrupted core run.
@@ -264,6 +265,11 @@ class CoreSettings(BaseModel):
     excluded_csv_path: Path = Field(
         default=Path("/app/storage/outputs/for_zalivka_excluded.csv"),
         validation_alias="EXCLUDED_CSV_PATH",
+    )
+    database_url: str = Field(
+        default="postgresql://realclimate@postgres:5432/realclimate",
+        validation_alias="DATABASE_URL",
+        min_length=1,
     )
     pending_redis_url: str = Field(
         default="redis://redis:6379/0",
