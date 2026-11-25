@@ -45,25 +45,14 @@ def decode_duplicate_map(payload: dict) -> DuplicateMap:
     }
 
 
-def encode_absent_articles(articles: set[str]) -> dict[str, list[str]]:
-    """Convert the set of absent articles to a JSON-safe Kafka payload.
-
-    Args:
-        articles: Articles hidden because the supplier catalogue no longer
-            lists them.
-
-    Returns:
-        A dictionary whose ``articles`` value is a sorted list, so the
-        published state is deterministic.
-    """
-    return {"articles": sorted(articles)}
-
-
 def decode_absent_articles(payload: dict) -> set[str]:
-    """Restore the set of absent articles from a Kafka payload.
+    """Restore the set of absent articles from a legacy Kafka payload.
+
+    The state is stored in PostgreSQL now; this decoder remains only for the
+    one-time import of the topic written by earlier versions.
 
     Args:
-        payload: Dictionary produced by :func:`encode_absent_articles`.
+        payload: Dictionary of the form ``{"articles": [...]}``.
 
     Returns:
         The set of tracked article codes; empty when the payload has none.

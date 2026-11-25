@@ -13,19 +13,19 @@ from app.core.redis_client import RedisClient, RedisCommandError
 from app.core.pipeline import (
     decode_absent_articles,
     decode_duplicate_map,
-    encode_absent_articles,
     encode_duplicate_map,
     process_catalogue,
 )
+from app.core.state_store import AbsentArticlesStore, StateStoreError
 from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.payloads import decode_bytes, encode_bytes
 from app.messaging.topics import (
-    CORE_ABSENT_ARTICLES_STATE,
     CORE_DUPLICATE_MAP_STATE,
     CORE_NOTIFICATIONS,
     CORE_PROCESS_RESULTS,
     CURRENT_DOWNLOADS,
+    LEGACY_ABSENT_ARTICLES_STATE,
     REFERENCE_DOWNLOADS,
     REFERENCE_PIPELINE_COMPLETED,
 )
@@ -34,11 +34,59 @@ logger = logging.getLogger(__name__)
 CORE_INPUT_TOPICS = [REFERENCE_DOWNLOADS, CURRENT_DOWNLOADS]
 
 
+def read_legacy_absent_articles(bus) -> set[str]:
+    """Read the absent-article state left in Kafka by earlier versions.
+
+    Args:
+        bus: Kafka bus able to read the latest record of a state topic.
+
+    Returns:
+        The tracked article codes, or an empty set when the topic does not
+        exist (a fresh installation) or holds no record.
+
+    Raises:
+        KafkaException: If Kafka fails for any reason other than a missing topic.
+    """
+    from confluent_kafka import KafkaError, KafkaException
+
+    try:
+        latest = bus.read_latest(LEGACY_ABSENT_ARTICLES_STATE)
+    except KafkaException as error:
+        reason = error.args[0] if error.args else None
+        if (
+            isinstance(reason, KafkaError)
+            and reason.code() == KafkaError.UNKNOWN_TOPIC_OR_PART
+        ):
+            return set()
+        raise
+    return decode_absent_articles(latest.payload) if latest else set()
+
+
+def load_absent_articles(bus, store: AbsentArticlesStore) -> set[str]:
+    """Load the tracked absent articles, importing the old Kafka state once.
+
+    Args:
+        bus: Kafka bus used for the one-time import of the legacy topic.
+        store: PostgreSQL store holding the current state.
+
+    Returns:
+        The set of articles currently hidden for absence.
+
+    Raises:
+        StateStoreError: If PostgreSQL is unavailable.
+        KafkaException: If the legacy import cannot read Kafka.
+    """
+    if not store.legacy_import_done():
+        store.import_legacy(read_legacy_absent_articles(bus))
+    return store.load()
+
+
 def handle_process(
     message: Envelope,
     bus,
     settings: CoreSettings | None = None,
     pending_inputs: RedisPendingInputsStore | None = None,
+    absent_store: AbsentArticlesStore | None = None,
 ) -> None:
     """Collect one downloader result and process the pair when both are ready.
 
@@ -46,19 +94,22 @@ def handle_process(
     correlation ID keys its part in Redis. Redis atomically grants a lease when
     both parts exist, preventing two core instances from processing the same
     pair concurrently. A successfully handled Kafka event is committed by the
-    consumer. Redis transport and command failures become retryable Kafka
-    errors; other processing failures are reported and treated as non-retryable.
+    consumer. Redis and PostgreSQL transport and command failures become
+    retryable Kafka errors; other processing failures are reported and treated
+    as non-retryable.
 
     Args:
         message: Reference or current downloader completion event.
         bus: Kafka bus for duplicate state, results, and notifications.
         settings: Validated core configuration loaded once at worker startup.
         pending_inputs: Redis-backed storage for incomplete downloader pairs.
+        absent_store: PostgreSQL storage for articles hidden because the
+            supplier catalogue no longer lists them.
 
     Raises:
         ValueError: If the event contract is malformed or unsupported.
-        RetryableMessageError: If Redis is unavailable or rejects a command,
-            so Kafka can redeliver the event.
+        RetryableMessageError: If Redis or PostgreSQL is unavailable or
+            rejects a command, so Kafka can redeliver the event.
         Exception: If input processing or publication fails.
     """
     claimed = False
@@ -71,6 +122,8 @@ def handle_process(
             settings = load_settings()
         if pending_inputs is None:
             pending_inputs = create_pending_inputs_store(settings)
+        if absent_store is None:
+            absent_store = AbsentArticlesStore(settings.database_url)
         if pending_inputs.is_completed(correlation_id):
             logger.info(
                 "Ignoring duplicate completed input correlation_id=%s",
@@ -108,10 +161,7 @@ def handle_process(
             if latest_state
             else dict(DUPLICATE_CODE_MAP)
         )
-        latest_absent = bus.read_latest(CORE_ABSENT_ARTICLES_STATE)
-        absent_articles = (
-            decode_absent_articles(latest_absent.payload) if latest_absent else set()
-        )
+        absent_articles = load_absent_articles(bus, absent_store)
         output = process_catalogue(
             reference_csv, current_csv, duplicate_map, absent_articles
         )
@@ -127,14 +177,7 @@ def handle_process(
             ),
             key="duplicate-map",
         )
-        bus.publish(
-            CORE_ABSENT_ARTICLES_STATE,
-            Envelope.create(
-                "absent_articles_state",
-                encode_absent_articles(output.updated_absent_articles),
-            ),
-            key="absent-articles",
-        )
+        absent_store.replace(output.updated_absent_articles)
 
         changes = output.detailed_changes
         result_payload = {
@@ -201,6 +244,10 @@ def handle_process(
             raise RetryableMessageError(
                 "Redis failed while storing or retrieving correlated core inputs"
             ) from error
+        if isinstance(error, StateStoreError):
+            raise RetryableMessageError(
+                "PostgreSQL failed while reading or writing core state"
+            ) from error
         raise
 
 
@@ -226,6 +273,7 @@ def main() -> None:
     configure_logging()
     settings = load_settings()
     pending_inputs = create_pending_inputs_store(settings)
+    absent_store = AbsentArticlesStore(settings.database_url)
     try:
         run_consumer(
             settings.bootstrap_servers,
@@ -235,6 +283,7 @@ def main() -> None:
                 handle_process,
                 settings=settings,
                 pending_inputs=pending_inputs,
+                absent_store=absent_store,
             ),
             service_name="core",
         )
