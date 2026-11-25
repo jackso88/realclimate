@@ -1,11 +1,16 @@
 """Tests for hiding articles that vanished from the supplier catalogue.
 
 Covers the hide / un-hide life cycle in ``merge_records_into_current``, its
-report lines, the persisted state codec, the full pipeline and the core
-consumer's handling of the absent-articles state topic.
+report lines, the legacy state decoder, the full pipeline and the core
+consumer's handling of the PostgreSQL absent-articles state.
 """
 
 from __future__ import annotations
+
+from unittest.mock import Mock
+
+import pytest
+from confluent_kafka import KafkaError, KafkaException
 
 from app.contracts.models import Envelope
 from app.core import consumer, pipeline
@@ -16,12 +21,10 @@ from app.core.merge_current import (
     serialize_current_csv,
 )
 from app.core.models import CoreSettings, ProcessResult
-from app.core.pipeline import (
-    decode_absent_articles,
-    encode_absent_articles,
-    process_catalogue,
-)
+from app.core.pipeline import decode_absent_articles, process_catalogue
+from app.core.state_store import StateStoreError
 from app.core.tests.test_core_consumer import (
+    FakeAbsentStore,
     FakeBus,
     FakePendingInputs,
     make_current,
@@ -34,7 +37,8 @@ from app.core.tests.test_core_merge_current import (
     make_excluded_record,
     make_record,
 )
-from app.messaging.topics import CORE_ABSENT_ARTICLES_STATE
+from app.messaging.exceptions import RetryableMessageError
+from app.messaging.topics import LEGACY_ABSENT_ARTICLES_STATE
 
 ARTICLE = "article : Артикул"
 HIDDEN = "hidden : Скрыто"
@@ -305,17 +309,14 @@ class TestReport:
 
 
 # --------------------------------------------------------------------------
-# persisted state codec
+# legacy state decoder
 # --------------------------------------------------------------------------
 
 
-class TestAbsentStateCodec:
-    def test_round_trip(self) -> None:
-        articles = {"NC-2", "NC-1"}
-        assert decode_absent_articles(encode_absent_articles(articles)) == articles
-
-    def test_encoding_is_sorted_and_json_safe(self) -> None:
-        assert encode_absent_articles({"B", "A"}) == {"articles": ["A", "B"]}
+class TestLegacyStateDecoder:
+    def test_decodes_the_articles_list(self) -> None:
+        payload = {"articles": ["NC-1", "NC-2"]}
+        assert decode_absent_articles(payload) == {"NC-1", "NC-2"}
 
     def test_empty_payload_decodes_to_empty_set(self) -> None:
         assert decode_absent_articles({}) == set()
@@ -386,54 +387,119 @@ def test_hide_and_restore_life_cycle_across_runs(monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_core_passes_absent_state_to_the_pipeline_and_republishes_it(
+def run_core(monkeypatch, tmp_path, bus, store, output=None):
+    """Feed both downloader events through the core and return pipeline inputs."""
+    received = []
+    result = output or make_output()
+    monkeypatch.setattr(
+        consumer,
+        "process_catalogue",
+        lambda reference, current, duplicate_map, absent: (
+            received.append(absent) or result
+        ),
+    )
+    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
+    pending = FakePendingInputs()
+    consumer.handle_process(make_reference(), bus, settings, pending, store)
+    consumer.handle_process(make_current(), bus, settings, pending, store)
+    return received, pending
+
+
+def test_core_passes_stored_state_to_the_pipeline_and_saves_the_result(
     monkeypatch, tmp_path
 ):
-    received = []
     output = make_output().model_copy(
         update={"updated_absent_articles": {"NC-9", "NC-1"}}
     )
-    monkeypatch.setattr(
-        consumer,
-        "process_catalogue",
-        lambda reference, current, duplicate_map, absent: (
-            received.append(absent) or output
-        ),
-    )
-    state = Envelope.create("absent_articles_state", {"articles": ["NC-1"]})
-    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
-    bus = FakeBus(absent_state=state)
-    pending = FakePendingInputs()
+    store = FakeAbsentStore({"NC-1"})
+    bus = FakeBus()
 
-    consumer.handle_process(make_reference(), bus, settings, pending)
-    consumer.handle_process(make_current(), bus, settings, pending)
+    received, _ = run_core(monkeypatch, tmp_path, bus, store, output)
 
     assert received == [{"NC-1"}]
-    _, message, key = next(
-        event for event in bus.published if event[0] == CORE_ABSENT_ARTICLES_STATE
-    )
-    assert message.payload == {"articles": ["NC-1", "NC-9"]}
-    assert key == "absent-articles"
+    assert store.replaced == [{"NC-1", "NC-9"}]
+    assert all(topic != LEGACY_ABSENT_ARTICLES_STATE for topic, _, _ in bus.published)
 
 
-def test_core_starts_with_empty_absent_state_when_topic_is_empty(monkeypatch, tmp_path):
-    received = []
-    monkeypatch.setattr(
-        consumer,
-        "process_catalogue",
-        lambda reference, current, duplicate_map, absent: (
-            received.append(absent) or make_output()
-        ),
-    )
-    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
-    bus = FakeBus()
-    pending = FakePendingInputs()
+def test_core_starts_with_empty_absent_state_when_the_table_is_empty(
+    monkeypatch, tmp_path
+):
+    store = FakeAbsentStore()
 
-    consumer.handle_process(make_reference(), bus, settings, pending)
-    consumer.handle_process(make_current(), bus, settings, pending)
+    received, _ = run_core(monkeypatch, tmp_path, FakeBus(), store)
 
     assert received == [set()]
-    published = next(
-        event[1] for event in bus.published if event[0] == CORE_ABSENT_ARTICLES_STATE
+    assert store.replaced == [set()]
+
+
+def test_core_imports_the_legacy_kafka_state_once(monkeypatch, tmp_path):
+    legacy = Envelope.create("absent_articles_state", {"articles": ["NC-1"]})
+    store = FakeAbsentStore(legacy_done=False)
+
+    received, _ = run_core(
+        monkeypatch, tmp_path, FakeBus(absent_state=legacy), store
     )
-    assert published.payload == {"articles": []}
+
+    assert store.imported == {"NC-1"}
+    assert received == [{"NC-1"}]
+
+
+def test_core_does_not_read_the_legacy_topic_after_the_import(monkeypatch, tmp_path):
+    bus = FakeBus(absent_error=AssertionError("legacy topic must not be read"))
+    store = FakeAbsentStore({"NC-3"}, legacy_done=True)
+
+    received, _ = run_core(monkeypatch, tmp_path, bus, store)
+
+    assert received == [{"NC-3"}]
+    assert store.imported is None
+
+
+def test_missing_legacy_topic_means_a_fresh_installation(monkeypatch, tmp_path):
+    missing = KafkaException(KafkaError(KafkaError.UNKNOWN_TOPIC_OR_PART))
+    store = FakeAbsentStore(legacy_done=False)
+
+    received, _ = run_core(
+        monkeypatch, tmp_path, FakeBus(absent_error=missing), store
+    )
+
+    assert store.imported == set()
+    assert received == [set()]
+
+
+def test_other_kafka_failures_do_not_mark_the_import_as_done(monkeypatch, tmp_path):
+    monkeypatch.setattr(consumer, "publish_failure", Mock())
+    monkeypatch.setattr(consumer, "process_catalogue", lambda *_: make_output())
+    broken = KafkaException(KafkaError(KafkaError._TRANSPORT))
+    store = FakeAbsentStore(legacy_done=False)
+    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
+    pending = FakePendingInputs()
+    bus = FakeBus(absent_error=broken)
+
+    consumer.handle_process(make_reference(), bus, settings, pending, store)
+    with pytest.raises(KafkaException):
+        consumer.handle_process(make_current(), bus, settings, pending, store)
+
+    assert store.imported is None
+    assert store.legacy_done is False
+
+
+def test_postgres_failure_is_retryable_and_releases_the_claim(monkeypatch, tmp_path):
+    class BrokenStore(FakeAbsentStore):
+        def load(self):
+            raise StateStoreError("database is down")
+
+    failure = Mock()
+    monkeypatch.setattr(consumer, "publish_failure", failure)
+    monkeypatch.setattr(consumer, "process_catalogue", lambda *_: make_output())
+    settings = CoreSettings(excluded_csv_path=tmp_path / "excluded.csv")
+    pending = FakePendingInputs()
+    store = BrokenStore()
+    bus = FakeBus()
+
+    consumer.handle_process(make_reference(), bus, settings, pending, store)
+    with pytest.raises(RetryableMessageError, match="PostgreSQL"):
+        consumer.handle_process(make_current(), bus, settings, pending, store)
+
+    failure.assert_called_once()
+    assert len(pending.released) == 1
+    assert pending.completed == []

@@ -82,14 +82,18 @@ def test_redis_failure_is_reported_as_retryable_for_kafka(monkeypatch):
     failure.assert_called_once()
 
 
-def test_core_main_creates_redis_store_and_subscribes_to_both_sources(monkeypatch):
+def test_core_main_creates_stores_and_subscribes_to_both_sources(monkeypatch):
     run_consumer = Mock()
     store = SimpleNamespace(client=SimpleNamespace(close=Mock()))
+    absent_store = object()
     settings = CoreSettings()
     monkeypatch.setattr(consumer, "configure_logging", Mock())
     monkeypatch.setattr(consumer, "run_consumer", run_consumer)
     monkeypatch.setattr(consumer, "load_settings", lambda: settings)
     monkeypatch.setattr(consumer, "create_pending_inputs_store", lambda _: store)
+    monkeypatch.setattr(
+        consumer, "AbsentArticlesStore", lambda database_url: absent_store
+    )
 
     consumer.main()
 
@@ -100,6 +104,10 @@ def test_core_main_creates_redis_store_and_subscribes_to_both_sources(monkeypatc
         "core-service",
     )
     assert args[3].func is consumer.handle_process
-    assert args[3].keywords == {"settings": settings, "pending_inputs": store}
+    assert args[3].keywords == {
+        "settings": settings,
+        "pending_inputs": store,
+        "absent_store": absent_store,
+    }
     assert kwargs == {"service_name": "core"}
     store.client.close.assert_called_once_with()
