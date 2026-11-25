@@ -36,6 +36,7 @@ jobs:
       KAFKA_SASL_USERNAME: ci-kafka-user
       KAFKA_SASL_PASSWORD: ci-kafka-secret
       KAFKA_TLS_STORE_PASSWORD: ci-store-secret
+      POSTGRES_PASSWORD: ci-postgres-secret
       TAPTOP_CMS_URL: https://example.invalid
       TAPTOP_BASE_URL: https://example.invalid
       TAPTOP_USERNAME: ci-user
