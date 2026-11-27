@@ -1,6 +1,6 @@
 """Tests for the core's two-event Redis pairing and processing contract."""
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.core import consumer
 from app.core.models import CorePipelineOutput, CoreSettings
 from app.messaging.payloads import decode_bytes, encode_bytes

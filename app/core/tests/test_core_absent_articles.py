@@ -7,7 +7,7 @@ consumer's handling of the absent-articles state topic.
 
 from __future__ import annotations
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.core import consumer, pipeline
 from app.core.merge_current import (
     format_merge_report,
