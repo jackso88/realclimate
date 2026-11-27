@@ -121,6 +121,8 @@ services:
         create_topic --topic health.heartbeats
         create_topic --topic rate.limit.requests --config retention.ms=3600000
         create_topic --topic rate.limit.responses --config retention.ms=3600000
+        create_topic --topic db.requests
+        create_topic --topic db.responses --config retention.ms=3600000
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --command-config /tmp/kafka-client.properties \
           --create --if-not-exists --topic core.duplicate-map.state \
