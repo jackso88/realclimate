@@ -5,14 +5,14 @@ from threading import Event, Lock, Thread
 from time import sleep
 from uuid import uuid4
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.config import load_client_settings
 from app.messaging.exceptions import (
     RemoteServiceError,
     RetryableMessageError,
 )
 from app.messaging.kafka import KafkaBus
-from app.messaging.topics import RATE_LIMIT_REQUESTS, RATE_LIMIT_RESPONSES
+from realclimate_contracts.topics import RATE_LIMIT_REQUESTS, RATE_LIMIT_RESPONSES
 
 logger = logging.getLogger(__name__)
 

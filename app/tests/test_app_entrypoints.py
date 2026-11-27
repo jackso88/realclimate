@@ -12,7 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.messaging.topics import (
+from realclimate_contracts.topics import (
     ADMIN_AUTH_REQUESTS,
     CORE_NOTIFICATIONS,
     CURRENT_DOWNLOADS,

@@ -5,9 +5,9 @@ from functools import partial
 
 from pydantic import ValidationError
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.kafka import run_consumer
-from app.messaging.topics import CORE_NOTIFICATIONS
+from realclimate_contracts.topics import CORE_NOTIFICATIONS
 from app.notifications.email.config import configure_logging, load_settings
 from app.notifications.email.models import DetailedChangesPayload, EmailSettings
 from app.notifications.email.sender import build_notification, send_email

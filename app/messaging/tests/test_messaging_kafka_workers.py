@@ -4,7 +4,7 @@ import pytest
 
 from app.messaging import kafka
 from app.messaging.exceptions import RetryableMessageError
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.tests.fixtures.fixtures_kafka import (
     FakeMessage,
 )

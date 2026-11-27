@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.downloader.reference import consumer
 
 

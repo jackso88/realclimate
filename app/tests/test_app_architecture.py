@@ -11,9 +11,9 @@ import re
 from pathlib import Path
 
 import pytest
+from realclimate_contracts import Envelope, topics
 
 from app.health_monitor.models import HealthMonitorEnvironment
-from app.messaging import topics
 from app.downloader.current import consumer as current_consumer
 from app.downloader.reference import consumer as reference_consumer
 from app.core import consumer as core_consumer
@@ -41,9 +41,15 @@ ALLOWED_SERVICE_DEPENDENCIES = {
     ("uploader", "admin_auth"),
 }
 
+# Topics that are still deployed and used by the core worker but are no longer
+# part of the shared registry. They go away once the core's state moves to the
+# database service.
+TRANSITIONAL_TOPICS = {"core.absent-articles.state"}
+
 
 def topic_names():
-    return {value for name, value in vars(topics).items() if name.isupper()}
+    shared = {value for name, value in vars(topics).items() if name.isupper()}
+    return shared | TRANSITIONAL_TOPICS
 
 
 def production_sources():
@@ -169,7 +175,5 @@ def test_pub_sub_pipeline_routes_reference_to_current_and_core_to_uploader():
     assert uploader_consumer.CORE_PROCESS_RESULTS == topics.CORE_PROCESS_RESULTS
 
 
-def test_message_envelope_is_owned_by_the_contracts_package():
-    from app.contracts.models import Envelope
-
-    assert Envelope.__module__ == "app.contracts.models"
+def test_message_envelope_is_owned_by_the_shared_contracts_package():
+    assert Envelope.__module__ == "realclimate_contracts.envelope"

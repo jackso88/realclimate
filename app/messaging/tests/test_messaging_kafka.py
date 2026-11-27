@@ -10,7 +10,7 @@ from app.messaging.exceptions import (
     RequestTimeoutError,
     RetryableMessageError,
 )
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.tests.fixtures.fixtures_kafka import (
     FakeConsumer,
     FakeMessage,

@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.notifications.bot.consumer import handle_notification
 
 

@@ -5,8 +5,8 @@ import logging
 from threading import Event, Lock, Thread
 import time
 
-from app.contracts.models import Envelope
-from app.messaging.topics import HEALTH_HEARTBEATS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import HEALTH_HEARTBEATS
 
 logger = logging.getLogger(__name__)
 

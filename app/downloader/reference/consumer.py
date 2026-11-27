@@ -26,7 +26,7 @@ from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.retry import is_retryable_transport_error
 from app.messaging.rate_limit import rate_limit_google_client
-from app.messaging.topics import (
+from realclimate_contracts.topics import (
     REFERENCE_PIPELINE_COMPLETED,
     REFERENCE_SYNC_REQUESTS,
 )

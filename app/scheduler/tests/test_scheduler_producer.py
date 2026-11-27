@@ -3,8 +3,8 @@
 import logging
 from unittest.mock import Mock
 
-from app.contracts.models import Envelope
-from app.messaging.topics import REFERENCE_SYNC_REQUESTS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import REFERENCE_SYNC_REQUESTS
 from app.scheduler import producer
 
 

@@ -4,13 +4,13 @@ import logging
 from functools import partial
 
 from app.admin_auth.producer import request_session
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.kafka import publish_failure, run_consumer
 from app.messaging.payloads import decode_bytes
 from app.messaging.retry import is_retryable_transport_error
 from app.messaging.rate_limit import rate_limit_session
-from app.messaging.topics import (
+from realclimate_contracts.topics import (
     ADMIN_AUTH_UPLOADER_RESPONSES,
     CORE_PROCESS_RESULTS,
     REFERENCE_PIPELINE_COMPLETED,

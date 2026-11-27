@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.downloader.current import consumer
 from app.downloader.current.models import DownloadedCsv
 

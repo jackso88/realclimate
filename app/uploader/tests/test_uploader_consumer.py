@@ -4,9 +4,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.payloads import encode_bytes
-from app.messaging.topics import CORE_PROCESS_RESULTS, REFERENCE_PIPELINE_COMPLETED
+from realclimate_contracts.topics import (
+    CORE_PROCESS_RESULTS,
+    REFERENCE_PIPELINE_COMPLETED,
+)
 from app.uploader import consumer
 from app.uploader.models import ImportQueueItem, UploadedFile
 

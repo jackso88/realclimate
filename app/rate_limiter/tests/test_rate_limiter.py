@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging import rate_limit
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.rate_limit import rate_limit_google_client, rate_limit_session

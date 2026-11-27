@@ -4,8 +4,8 @@ import logging
 from uuid import uuid4
 
 from app.messaging.kafka import KafkaBus
-from app.contracts.models import Envelope
-from app.messaging.topics import REFERENCE_SYNC_REQUESTS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import REFERENCE_SYNC_REQUESTS
 from app.scheduler.config import load_settings
 from app.scheduler.models import SchedulerSettings
 

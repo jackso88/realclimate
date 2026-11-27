@@ -4,7 +4,7 @@ import logging
 from functools import partial
 from uuid import uuid4
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.core.config import configure_logging, load_settings
 from app.core.duplicate_mapping import DUPLICATE_CODE_MAP
 from app.core.models import CoreSettings

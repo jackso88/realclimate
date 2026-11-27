@@ -10,11 +10,11 @@ import requests
 from app.downloader.reference import auth_cli, consumer, producer
 from app.downloader.reference.config import SCOPES
 from app.downloader.reference.exceptions import ReferenceAuthenticationError
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.downloader.reference.tests.fixtures.fixtures_consumer import SETTINGS
 from app.messaging.payloads import decode_bytes
 from app.messaging.exceptions import RetryableMessageError
-from app.messaging.topics import (
+from realclimate_contracts.topics import (
     REFERENCE_DOWNLOADS,
     REFERENCE_PIPELINE_COMPLETED,
     REFERENCE_SNAPSHOT_STATE,

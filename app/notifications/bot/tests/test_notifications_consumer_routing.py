@@ -3,8 +3,8 @@
 import logging
 from unittest.mock import Mock, patch
 
-from app.contracts.models import Envelope
-from app.messaging.topics import CORE_NOTIFICATIONS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import CORE_NOTIFICATIONS
 from app.notifications.bot import consumer
 from app.notifications.bot.consumer import handle_notification
 

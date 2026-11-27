@@ -3,8 +3,8 @@
 from unittest.mock import Mock
 
 from app.admin_auth.producer import request_session
-from app.contracts.models import Envelope
-from app.messaging.topics import ADMIN_AUTH_REQUESTS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import ADMIN_AUTH_REQUESTS
 
 
 def make_reply():

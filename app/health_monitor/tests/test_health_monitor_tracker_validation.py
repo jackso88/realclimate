@@ -3,7 +3,7 @@
 import pytest
 
 from app.health_monitor.monitor import HeartbeatTracker
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 
 NOW_EPOCH = 1_700_000_000.0
 

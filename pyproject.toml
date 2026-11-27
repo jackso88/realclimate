@@ -13,6 +13,7 @@ dependencies = [
     "google-auth-oauthlib>=1.4.1,<2.0.0",
     "gspread>=6.2.1,<7.0.0",
     "pydantic>=2.12.0,<3.0.0",
+    "realclimate-contracts @ git+https://github.com/jackso88/realclimate-contracts.git@v0.1.0",
     "requests>=2.34.2,<3.0.0",
     "urllib3 (>=2.8.0,<3.0.0)",
 ]
@@ -39,7 +40,6 @@ addopts = [
     "-ra",
     "-p", "app.notifications.bot.tests.fixtures",
     "-p", "app.notifications.email.tests.fixtures",
-    "-p", "app.contracts.tests.fixtures",
     "-p", "app.core.tests.fixtures",
     "-p", "app.tests.fixtures",
     "-p", "app.uploader.tests.fixtures",

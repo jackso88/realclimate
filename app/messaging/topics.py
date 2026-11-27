@@ -1,17 +1,15 @@
-"""Kafka topic names used by the application services."""
+"""Compatibility alias for the Kafka topic registry.
 
-REFERENCE_SYNC_REQUESTS = "reference.sync.requests"
-REFERENCE_DOWNLOADS = "downloader.reference.completed"
-REFERENCE_PIPELINE_COMPLETED = "reference.pipeline.completed"
-REFERENCE_SNAPSHOT_STATE = "reference.snapshot.state"
-CURRENT_DOWNLOADS = "downloader.current.completed"
-CORE_PROCESS_RESULTS = "core.process.results"
-CORE_DUPLICATE_MAP_STATE = "core.duplicate-map.state"
+Topic names are owned by the ``realclimate-contracts`` package. New code should
+import them from there::
+
+    from realclimate_contracts.topics import CORE_PROCESS_RESULTS
+
+This module re-exports the shared names so the old import path keeps working
+while the services are moved over, and is removed once nothing imports it.
+"""
+
+from realclimate_contracts.topics import *  # noqa: F401,F403
+
+# Still used by the core worker until its state moves to the database service.
 CORE_ABSENT_ARTICLES_STATE = "core.absent-articles.state"
-ADMIN_AUTH_REQUESTS = "admin-auth.requests"
-ADMIN_AUTH_CURRENT_RESPONSES = "admin-auth.current.responses"
-ADMIN_AUTH_UPLOADER_RESPONSES = "admin-auth.uploader.responses"
-CORE_NOTIFICATIONS = "notifications"
-HEALTH_HEARTBEATS = "health.heartbeats"
-RATE_LIMIT_REQUESTS = "rate.limit.requests"
-RATE_LIMIT_RESPONSES = "rate.limit.responses"
