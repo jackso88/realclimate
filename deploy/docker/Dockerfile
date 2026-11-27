@@ -5,6 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app
 
 WORKDIR /app
+# git is needed to install realclimate-contracts from its tagged release.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir poetry==2.5.1
 COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.create false \

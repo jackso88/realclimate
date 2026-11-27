@@ -169,7 +169,15 @@ def test_pub_sub_pipeline_routes_reference_to_current_and_core_to_uploader():
     assert uploader_consumer.CORE_PROCESS_RESULTS == topics.CORE_PROCESS_RESULTS
 
 
-def test_message_envelope_is_owned_by_the_contracts_package():
+def test_message_envelope_is_owned_by_the_shared_contracts_package():
     from app.contracts.models import Envelope
 
-    assert Envelope.__module__ == "app.contracts.models"
+    assert Envelope.__module__ == "realclimate_contracts.envelope"
+
+
+def test_shared_topics_come_from_the_shared_contracts_package():
+    from realclimate_contracts import topics as shared_topics
+
+    shared = {value for name, value in vars(shared_topics).items() if name.isupper()}
+
+    assert shared <= topic_names()
