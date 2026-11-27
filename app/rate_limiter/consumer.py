@@ -3,9 +3,9 @@
 import logging
 from functools import partial
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.kafka import publish_reply, run_consumer
-from app.messaging.topics import RATE_LIMIT_REQUESTS
+from realclimate_contracts.topics import RATE_LIMIT_REQUESTS
 from app.rate_limiter.config import configure_logging, load_settings
 from app.rate_limiter.models import RateLimiterSettings
 from app.rate_limiter.redis_client import RedisClient, RedisCommandError

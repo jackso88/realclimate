@@ -12,8 +12,8 @@ import pytest
 
 from app.health_monitor import monitor
 from app.health_monitor.models import HealthMonitorSettings
-from app.contracts.models import Envelope
-from app.messaging.topics import HEALTH_HEARTBEATS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import HEALTH_HEARTBEATS
 
 START = 1000.0
 DOWN_TEXT = "🚨 Сервис «core» недоступен: heartbeat не поступал более 120 секунд."

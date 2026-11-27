@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 
 
 @pytest.fixture

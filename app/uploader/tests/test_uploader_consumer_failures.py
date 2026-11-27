@@ -3,7 +3,7 @@
 import pytest
 import requests
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.payloads import encode_bytes
 from app.messaging.exceptions import RetryableMessageError
 from app.uploader import consumer

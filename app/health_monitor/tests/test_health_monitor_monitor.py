@@ -13,8 +13,8 @@ from app.health_monitor.monitor import (
     _send_transition,
     run_health_monitor,
 )
-from app.contracts.models import Envelope
-from app.messaging.topics import HEALTH_HEARTBEATS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import HEALTH_HEARTBEATS
 
 
 def make_heartbeat(service="core", sent_at=100.0):

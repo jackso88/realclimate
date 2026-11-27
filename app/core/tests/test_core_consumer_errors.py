@@ -5,12 +5,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.core import consumer
 from app.core.models import CoreSettings
 from app.messaging.exceptions import RetryableMessageError
 from app.messaging.payloads import encode_bytes
-from app.messaging.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
+from realclimate_contracts.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
 
 
 class FakePendingInputs:

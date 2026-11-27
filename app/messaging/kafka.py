@@ -15,8 +15,8 @@ from app.messaging.exceptions import (
     RetryableMessageError,
     RequestTimeoutError,
 )
-from app.contracts.models import Envelope
-from app.messaging.topics import CORE_NOTIFICATIONS
+from realclimate_contracts import Envelope
+from realclimate_contracts.topics import CORE_NOTIFICATIONS
 
 logger = logging.getLogger(__name__)
 SENSITIVE_QUERY_VALUE = re.compile(r"(?i)(access|token|password)=([^&\s]+)")

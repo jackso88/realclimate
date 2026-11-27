@@ -2,7 +2,7 @@
 
 from app.admin_auth.models import SessionSnapshot
 from app.messaging.kafka import KafkaBus
-from app.messaging.topics import ADMIN_AUTH_REQUESTS
+from realclimate_contracts.topics import ADMIN_AUTH_REQUESTS
 
 
 def request_session(

@@ -1,10 +1,10 @@
 """Publish the current catalogue snapshot as an independent event."""
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.downloader.current.models import DownloadedCsv
 from app.messaging.kafka import KafkaBus
 from app.messaging.payloads import encode_bytes
-from app.messaging.topics import CURRENT_DOWNLOADS
+from realclimate_contracts.topics import CURRENT_DOWNLOADS
 
 
 def publish_current_snapshot(

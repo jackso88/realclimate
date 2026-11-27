@@ -8,7 +8,7 @@ import pytest
 from app.admin_auth import consumer
 from app.admin_auth.exceptions import AdminLoginError
 from app.admin_auth.models import AdminSettings, SessionSnapshot
-from app.messaging.topics import ADMIN_AUTH_REQUESTS
+from realclimate_contracts.topics import ADMIN_AUTH_REQUESTS
 
 pytestmark = pytest.mark.usefixtures("admin_empty_session_cache")
 

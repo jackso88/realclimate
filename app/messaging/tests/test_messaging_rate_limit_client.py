@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging import rate_limit_client as module
 from app.messaging.exceptions import RemoteServiceError, RetryableMessageError
 

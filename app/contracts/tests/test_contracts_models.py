@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 
 # --- Envelope.create --------------------------------------------------------
 

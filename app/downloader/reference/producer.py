@@ -2,10 +2,10 @@
 
 import hashlib
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.messaging.kafka import KafkaBus
 from app.messaging.payloads import encode_bytes
-from app.messaging.topics import REFERENCE_DOWNLOADS, REFERENCE_SNAPSHOT_STATE
+from realclimate_contracts.topics import REFERENCE_DOWNLOADS, REFERENCE_SNAPSHOT_STATE
 
 
 def publish_reference_if_changed(

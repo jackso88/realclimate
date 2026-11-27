@@ -9,7 +9,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.messaging.exceptions import RetryableMessageError
-from app.messaging.topics import CORE_NOTIFICATIONS
+from realclimate_contracts.topics import CORE_NOTIFICATIONS
 from app.notifications.email import consumer
 from app.notifications.email.consumer import handle_notification
 from app.notifications.email.exceptions import EmailDeliveryError, EmailRejectedError

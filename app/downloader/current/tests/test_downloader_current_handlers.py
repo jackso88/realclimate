@@ -6,12 +6,12 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from app.contracts.models import Envelope
+from realclimate_contracts import Envelope
 from app.downloader.current import consumer, producer
 from app.downloader.current.models import DownloadedCsv
 from app.messaging.payloads import decode_bytes
 from app.messaging.exceptions import RetryableMessageError
-from app.messaging.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
+from realclimate_contracts.topics import CURRENT_DOWNLOADS, REFERENCE_DOWNLOADS
 
 pytestmark = pytest.mark.usefixtures("current_bypass_rate_limit")
 

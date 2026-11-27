@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from app.messaging import health
 from app.messaging.health import HeartbeatReporter, publish_heartbeat
-from app.messaging.topics import HEALTH_HEARTBEATS
+from realclimate_contracts.topics import HEALTH_HEARTBEATS
 
 
 class RecordingBus:

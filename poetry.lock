@@ -1396,6 +1396,25 @@ files = [
 dev = ["black", "build", "mypy", "pytest", "pytest-cov", "setuptools", "tox", "twine", "wheel"]
 
 [[package]]
+name = "realclimate-contracts"
+version = "0.1.0"
+description = "Shared message contracts for the realclimate services"
+optional = false
+python-versions = ">=3.12,<4.0"
+groups = ["main"]
+files = []
+develop = false
+
+[package.dependencies]
+pydantic = ">=2.12.0,<3.0.0"
+
+[package.source]
+type = "git"
+url = "https://github.com/jackso88/realclimate-contracts.git"
+reference = "v0.1.0"
+resolved_reference = "c9767c7122d850371c35cb5bf5a976298659e243"
+
+[[package]]
 name = "requests"
 version = "2.34.2"
 description = "Python HTTP for Humans."
@@ -1540,4 +1559,4 @@ zstd = ["backports-zstd (>=1.0.0) ; python_version < \"3.14\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "80a2af83e5d1fafc3b8888f24b162215489f70b9eacc8cba18a3dd7b46e17ef8"
+content-hash = "decfb4f0e9d7364d91b2d51ccf84742ed35f18d8de18e1094f68f318be23aa9e"
