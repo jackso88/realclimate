@@ -1,6 +1,7 @@
 """Fixtures that provide Kafka envelopes and change reports."""
 
 import pytest
+from realclimate_contracts import Envelope
 
 
 @pytest.fixture
@@ -12,8 +13,6 @@ def changes():
 @pytest.fixture
 def detailed_changes_envelope(changes):
     """Return a ``detailed_changes`` envelope carrying a correlation ID."""
-    from realclimate_contracts import Envelope
-
     return Envelope.create(
         "detailed_changes", {"changes": changes}, correlation_id="corr-123"
     )
@@ -22,8 +21,6 @@ def detailed_changes_envelope(changes):
 @pytest.fixture
 def make_envelope():
     """Return a factory that builds envelopes with a chosen command and payload."""
-
-    from realclimate_contracts import Envelope
 
     def factory(command, payload=None, correlation_id="corr-123"):
         return Envelope.create(command, payload, correlation_id=correlation_id)
