@@ -1,7 +1,9 @@
 """Tests for the ORM queries of the database service."""
 
+from datetime import datetime, timezone
+
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.db_service import repository
@@ -34,21 +36,19 @@ def test_replace_removes_articles_that_are_no_longer_absent(session_factory):
 
 
 def test_replace_keeps_the_original_hide_time_of_kept_articles(session_factory):
+    long_ago = datetime(2020, 1, 1, tzinfo=timezone.utc)
     with session_factory.begin() as session:
         repository.replace_absent_articles(session, ["NC-1"])
     with session_factory.begin() as session:
-        session.execute(
-            AbsentArticle.__table__.update().values(hidden_at="2020-01-01 00:00:00")
-        )
+        session.execute(update(AbsentArticle).values(hidden_at=long_ago))
     with session_factory.begin() as session:
         repository.replace_absent_articles(session, ["NC-1", "NC-2"])
 
     with session_factory() as session:
         rows = {
-            row.article: str(row.hidden_at)
-            for row in session.scalars(select(AbsentArticle))
+            row.article: row.hidden_at for row in session.scalars(select(AbsentArticle))
         }
-    assert rows["NC-1"].startswith("2020-01-01")
+    assert rows["NC-1"].year == 2020
     assert set(rows) == {"NC-1", "NC-2"}
 
 
