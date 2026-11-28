@@ -93,6 +93,7 @@ class HealthMonitorEnvironment(BaseModel):
         "notifications_email",
         "downloader_current",
         "downloader_reference",
+        "db_service",
     )
 
     bootstrap_servers: str = Field(
