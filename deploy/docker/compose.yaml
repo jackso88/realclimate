@@ -9,6 +9,8 @@ x-common-env: &common_env
   KAFKA_SSL_CA_LOCATION: /run/secrets/kafka/kafka-ca.pem
   TZ: Europe/Minsk
 
+x-database-url: &database_url postgresql://${POSTGRES_USER:-realclimate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-realclimate}
+
 x-kafka-ca-volume: &kafka_ca_volume kafka_client_certs:/run/secrets/kafka:ro
 
 x-cms-env: &cms_env
@@ -252,6 +254,38 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-realclimate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-realclimate}
+      TZ: Europe/Minsk
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  db_service:
+    container_name: db_service
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.db_service
+    environment:
+      <<: *common_env
+      DATABASE_URL: *database_url
+    volumes:
+      - *kafka_ca_volume
+    depends_on:
+      kafka_init: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+
   rate_limiter:
     container_name: rate_limiter
     build: *app_build
@@ -359,3 +393,4 @@ volumes:
   kafka_server_certs:
   kafka_client_certs:
   redis_data:
+  postgres_data:

@@ -1,0 +1,22 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+# git is needed to install realclimate-contracts from its tagged release.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir poetry==2.5.1
+COPY pyproject.toml poetry.lock ./
+RUN poetry config virtualenvs.create false \
+    && poetry install --only main --no-root --no-interaction --no-ansi
+COPY app ./app
+COPY db ./db
+
+# Apply pending schema migrations every time the container starts, then run the
+# worker. If a migration fails the container exits and compose restarts it, so
+# the worker never runs against an outdated schema.
+CMD ["sh", "-c", "alembic -c db/alembic.ini upgrade head && exec python -m app.db_service.consumer"]

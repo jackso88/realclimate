@@ -30,12 +30,51 @@ jobs:
           poetry run python -m pytest -q --cov=app --cov-report=term-missing
           --cov-fail-under=80
 
+  migrations:
+    # Migrations are generated from the models, never written by hand. This job
+    # applies them to a real PostgreSQL and fails when the models describe
+    # something that no migration creates yet (run `alembic revision
+    # --autogenerate` and commit the result).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Poetry
+        run: pipx install poetry==2.5.1
+      - name: Install dependencies
+        run: poetry install --only main --no-root --no-interaction --no-ansi
+      - name: Apply the migrations
+        run: poetry run alembic -c db/alembic.ini upgrade head
+      - name: Check that the models and migrations agree
+        run: poetry run alembic -c db/alembic.ini check
+
   kafka-tls-integration:
     runs-on: ubuntu-latest
     env:
       KAFKA_SASL_USERNAME: ci-kafka-user
       KAFKA_SASL_PASSWORD: ci-kafka-secret
       KAFKA_TLS_STORE_PASSWORD: ci-store-secret
+      POSTGRES_PASSWORD: ci-postgres-secret
       TAPTOP_CMS_URL: https://example.invalid
       TAPTOP_BASE_URL: https://example.invalid
       TAPTOP_USERNAME: ci-user
